@@ -21,22 +21,55 @@
       </div>
       <div class="ftb-toggle-btn" id="clipboardSyncToggleBtn" role="switch" aria-checked="false" tabindex="0"><div class="ftb-toggle-knob"></div></div>
     </div>
-    <p class="dict-hint">本机设备 ID：<span id="clipboardSyncDevice"></span></p>
-    <p class="dict-hint">在本机生成配对码，在另一台设备填写本机的私网 IPv4 与配对码。配对码五分钟内有效、仅供一台设备使用，请通过可信渠道传递。</p>
-    <div class="dict-toolbar">
-      <button type="button" id="clipboardSyncGenerate" class="dict-button secondary">生成配对码</button>
-      <button type="button" id="clipboardSyncCancel" class="dict-button secondary">取消配对码</button>
-      <input id="clipboardSyncInvite" class="dict-input" readonly aria-label="本机配对码" autocomplete="off">
+    <div class="clipboard-sync-body">
+      <div class="clipboard-device-identity"><span>本机设备 ID</span><code id="clipboardSyncDevice"></code></div>
+      <div class="clipboard-pairing-grid">
+        <section class="clipboard-pairing-step" aria-labelledby="clipboardInviteHeading">
+          <h3 id="clipboardInviteHeading">让另一台设备连接本机</h3>
+          <p>生成二维码，交给另一台设备扫描。一次配对后，双方都能同步。</p>
+          <div class="clipboard-actions">
+            <button type="button" id="clipboardSyncGenerate" class="clipboard-button">生成配对码</button>
+            <button type="button" id="clipboardSyncCancel" class="clipboard-button clipboard-quiet" hidden>取消</button>
+          </div>
+          <div id="clipboardSyncQr" class="clipboard-qr" hidden>
+            <canvas id="clipboardSyncQrCanvas" aria-label="本机配对二维码" role="img"></canvas>
+            <span id="clipboardSyncExpiry">五分钟内有效，仅供一台设备使用</span>
+          </div>
+          <details id="clipboardSyncManualCode" class="clipboard-advanced" hidden>
+            <summary>手动复制配对码</summary>
+            <input id="clipboardSyncInvite" class="dict-input" readonly aria-label="本机配对码" autocomplete="off">
+          </details>
+        </section>
+        <section class="clipboard-pairing-step" aria-labelledby="clipboardPairHeading">
+          <h3 id="clipboardPairHeading">连接另一台设备</h3>
+          <p>扫描对方二维码，或粘贴配对码。认证成功后，两端自动保存配对。</p>
+          <div class="clipboard-actions">
+            <button type="button" id="clipboardSyncScan" class="clipboard-button">摄像头扫码</button>
+            <button type="button" id="clipboardSyncScanImage" class="clipboard-button">选择二维码图片</button>
+            <input id="clipboardSyncQrFile" type="file" accept="image/png,image/jpeg,image/webp,image/bmp" hidden>
+          </div>
+          <label class="clipboard-field" for="clipboardSyncCode">对方配对码</label>
+          <div class="clipboard-connect-row">
+            <input id="clipboardSyncCode" class="dict-input" placeholder="粘贴配对码，或扫码填写" aria-label="对方配对码" maxlength="240" autocomplete="off" spellcheck="false">
+            <button type="button" id="clipboardSyncPair" class="clipboard-button clipboard-primary">配对并连接</button>
+          </div>
+          <p id="clipboardSyncScannedDevice" class="clipboard-scan-device" hidden></p>
+          <details class="clipboard-advanced">
+            <summary>无法自动发现时，指定连接地址</summary>
+            <input id="clipboardSyncAddress" class="dict-input" placeholder="可选，例如 192.168.1.10" aria-label="可选私网 IPv4" maxlength="15" autocomplete="off">
+          </details>
+        </section>
+      </div>
+      <p id="clipboardSyncStatus" class="clipboard-status" role="status" aria-live="polite"></p>
+      <div class="clipboard-devices-heading"><h3>已配对设备</h3><button type="button" id="clipboardSyncRefresh" class="clipboard-button clipboard-quiet">刷新</button></div>
+      <ul id="clipboardSyncDevices"><li class="clipboard-empty">暂无配对设备</li></ul>
+      <p class="clipboard-footnote">设备身份由 ID 和配对密钥验证，IP 改变后自动重连。关闭共享会停止收发并清空未发送队列，保留已有历史和配对。请仅向可信设备展示二维码或配对码。</p>
     </div>
-    <div class="dict-toolbar">
-      <input id="clipboardSyncAddress" class="dict-input" placeholder="对方私网 IPv4，例如 192.168.1.10" aria-label="对方私网 IPv4" maxlength="15" autocomplete="off">
-      <input id="clipboardSyncCode" class="dict-input" placeholder="对方生成的完整配对码" aria-label="对方配对码" maxlength="240" autocomplete="off" spellcheck="false">
-      <button type="button" id="clipboardSyncPair" class="dict-button primary">保存并连接</button>
-    </div>
-    <p id="clipboardSyncStatus" class="dict-hint" role="status" aria-live="polite"></p>
-    <button type="button" id="clipboardSyncRefresh" class="dict-button secondary">刷新设备列表</button>
-    <ul id="clipboardSyncDevices"></ul>
-    <p class="dict-hint">设备列表表示已保存的配对。若无法收发，请检查私网防火墙；IP 改变后撤销并重新配对。关闭共享后停止收发，未发送的队列会清空；历史记录和配对仍保留。</p>
+    <dialog id="clipboardSyncScanDialog" class="clipboard-scan-dialog" aria-labelledby="clipboardScanHeading">
+      <div class="clipboard-devices-heading"><h3 id="clipboardScanHeading">扫描配对二维码</h3><button type="button" id="clipboardSyncStopScan" class="clipboard-button">关闭</button></div>
+      <video id="clipboardSyncScanVideo" autoplay muted playsinline></video>
+      <p id="clipboardSyncScanStatus" role="status">正在打开摄像头…</p>
+    </dialog>
   </div>
 
   <!-- 候选混输：折叠头 + 总开关，展开后是各项混输的子开关。总开关关闭时子开关置灰禁用，勾选状态仍保留展示 -->

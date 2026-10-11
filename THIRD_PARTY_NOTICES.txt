@@ -51,10 +51,17 @@ Interface resources
 -------------------
 
   ui-html                 GPL-3.0       ui-html/ in this repository
+  qrcode 1.5.4            MIT           https://github.com/soldair/node-qrcode
+  dijkstrajs 1.0.3        MIT           https://github.com/andrewhayward/dijkstra
+  @zxing/browser 0.2.1    MIT           https://github.com/zxing-js/browser
+  @zxing/library 0.23.0   Apache-2.0    https://github.com/zxing-js/library
+  @zxing/text-encoding    Unlicense OR Apache-2.0 https://github.com/zxing-js/text-encoding
 
 The candidate window, floating toolbar, tray menu and settings page are HTML,
 CSS and JavaScript loaded by the Server at runtime. They are part of this
-project and carry the same license as the rest of it.
+project and carry the same license as the rest of it. QR generation and scanning
+bundle the above libraries; Apache-2.0 terms are reproduced in section 2 and
+the QR libraries' MIT notices are reproduced in section 14 below.
 
 ------------------------------------------------------------------------------
 1. The input engine, msimeui and the interface resources - GNU General Public License version 3
@@ -1166,3 +1173,40 @@ Sources of helpcodes/*.txt, via MSIME-HelpCode:
                                                拼音加加 table
 
 Unresolved: CustomPinyinDictionary, rime-jp_sela and ZRM_Aux-code publish no license; the English word list in english.db includes word forms extracted from a commercial dictionary, whose rights belong to its publisher; and the helpcode tables reproduce input schemes whose rights belong to their respective authors. jiajia_helpcode.txt additionally aligns its codes with a data table extracted from the commercial 拼音加加 5.x installer. Redistributors who need an explicit grant for those parts should raise it with the Metasequoia IME maintainers rather than assume one. This notice will be updated as those terms are clarified.
+
+------------------------------------------------------------------------------
+14. QR pairing libraries
+------------------------------------------------------------------------------
+
+qrcode: Copyright (c) 2012 Ryan Day
+@zxing/browser: Copyright (c) 2018 ZXing for JS
+dijkstrajs: Copyright (C) 2008 Wyatt Baldwin <self@wyattbaldwin.com>
+All rights reserved.
+
+The MIT License (MIT)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+@zxing/library is an unmodified TypeScript port of ZXing, maintained by
+Adrian Tosca, David Werth, Luiz Barni and contributors. Its QR decoder retains
+Copyright 2007 ZXing authors and other per-file ZXing authors notices.
+It is licensed under Apache-2.0, reproduced in section 2. Full original
+per-file notices and source are available at https://github.com/zxing-js/library.
+@zxing/text-encoding by Joshua Bell and contributors is dual-licensed under
+Unlicense or Apache-2.0; the Apache-2.0 option is reproduced in section 2.

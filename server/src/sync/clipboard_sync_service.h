@@ -7,7 +7,8 @@
 namespace ClipboardSync
 {
 // The default is the product listener; tests can isolate both address and port.
-void StartLanService(unsigned short port = MsimeClipboardLan::kPort, const std::string &bind_address = "0.0.0.0");
+void StartLanService(unsigned short port = MsimeClipboardLan::kPort, const std::string &bind_address = "0.0.0.0",
+                     unsigned short discovery_port = MsimeClipboardLan::kDiscoveryPort);
 void StopLanService();
 PairingStore OpenPairingStore();
 int64_t UnixNow();

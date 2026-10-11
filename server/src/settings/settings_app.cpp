@@ -1808,6 +1808,30 @@ HRESULT OnControllerCreated(HWND hwnd, HRESULT result, ICoreWebView2CompositionC
     g_controller->put_Bounds(bounds);
 
     EventRegistrationToken token{};
+    g_webview->add_PermissionRequested(
+        Callback<ICoreWebView2PermissionRequestedEventHandler>([hwnd](ICoreWebView2 *,
+                                                                      ICoreWebView2PermissionRequestedEventArgs *args)
+                                                                   -> HRESULT {
+            COREWEBVIEW2_PERMISSION_KIND kind{};
+            if (FAILED(args->get_PermissionKind(&kind)) || kind != COREWEBVIEW2_PERMISSION_KIND_CAMERA)
+                return S_OK;
+            args->put_State(COREWEBVIEW2_PERMISSION_STATE_DENY);
+            ComPtr<ICoreWebView2PermissionRequestedEventArgs3> transient;
+            if (SUCCEEDED(args->QueryInterface(IID_PPV_ARGS(&transient))))
+                transient->put_SavesInProfile(FALSE);
+            LPWSTR uri = nullptr;
+            if (FAILED(args->get_Uri(&uri)))
+                return S_OK;
+            const std::wstring source = uri ? uri : L"";
+            CoTaskMemFree(uri);
+            if (source.rfind(L"https://imesettings.example/", 0) != 0 || !IsWindowVisible(hwnd))
+                return S_OK;
+            if (MessageBoxW(hwnd, L"允许使用摄像头扫描另一台设备的配对二维码吗？\n关闭扫码窗口后会停止摄像头。",
+                            L"剪贴板扫码配对", MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) == IDYES)
+                args->put_State(COREWEBVIEW2_PERMISSION_STATE_ALLOW);
+            return S_OK;
+        }).Get(),
+        &token);
     g_webview->add_ContentLoading(
         Callback<ICoreWebView2ContentLoadingEventHandler>([](ICoreWebView2 *,
                                                              ICoreWebView2ContentLoadingEventArgs *) -> HRESULT {

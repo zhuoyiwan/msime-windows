@@ -162,7 +162,8 @@ bool ClipboardSync::PairingStore::CancelInvite() const
 bool ClipboardSync::PairingStore::AddPeer(const std::string &code, const std::string &address) const
 {
     MsimeClipboardLan::PairingCode key;
-    if (!MsimeClipboardLan::DecodePairingCode(code, key) || key.device == local_device_ || !IsLanAddress(address))
+    if (!MsimeClipboardLan::DecodePairingCode(code, key) || key.device == local_device_ ||
+        (!address.empty() && !IsLanAddress(address)))
         return false;
     Lock lock;
     State state;
@@ -222,4 +223,44 @@ bool ClipboardSync::PairingStore::Authorize(const std::string &key_id, const std
     state.devices.push_back({{device, state.invite_id, state.invite_secret}, {}});
     ClearInvite(state); // Consume the invitation only after a complete authenticated TLS handshake.
     return Write(path_, local_device_, state);
+}
+
+std::optional<std::string> ClipboardSync::PairingStore::DiscoverySecret(const std::string &key_id,
+                                                                        const std::string &device, int64_t now) const
+{
+    if (!MsimeClipboardSync::ValidIdentity(device) || device == local_device_)
+        return std::nullopt;
+    Lock lock;
+    State state;
+    if (!lock.locked || !Read(path_, local_device_, state))
+        return std::nullopt;
+    for (const auto &peer : state.devices)
+        if (peer.key.key_id == key_id || peer.key.device == device)
+            return peer.key.key_id == key_id && peer.key.device == device ? std::optional<std::string>(peer.key.secret)
+                                                                          : std::nullopt;
+    // Locating a valid invitation does not consume it or create a trusted peer.
+    if (!state.invite_id.empty() && key_id == state.invite_id &&
+        now >= state.expires - MsimeClipboardLan::kInviteSeconds && now < state.expires)
+        return state.invite_secret;
+    return std::nullopt;
+}
+
+bool ClipboardSync::PairingStore::RememberAddress(const std::string &key_id, const std::string &device,
+                                                  const std::string &address) const
+{
+    if (!IsLanAddress(address))
+        return false;
+    Lock lock;
+    State state;
+    if (!lock.locked || !Read(path_, local_device_, state))
+        return false;
+    for (auto &peer : state.devices)
+        if (peer.key.key_id == key_id && peer.key.device == device)
+        {
+            if (peer.address == address)
+                return true;
+            peer.address = address;
+            return Write(path_, local_device_, state);
+        }
+    return false;
 }

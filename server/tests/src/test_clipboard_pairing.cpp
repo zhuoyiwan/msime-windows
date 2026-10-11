@@ -1,6 +1,7 @@
 #include "sync/clipboard_pairing.h"
 #include "sync/clipboard_sync_service.h"
 #include "sync/clipboard_tls.h"
+#include "sync/clipboard_discovery.h"
 #include "clipboard/clipboard_history.h"
 #include "config/credential_protection.h"
 #include "tests/includes/test_framework.h"
@@ -51,6 +52,129 @@ struct Fixture
     }
 };
 } // namespace
+
+TEST_CASE(clipboard_discovery_invitation_is_non_consuming_and_address_is_only_a_hint)
+{
+    Fixture fixture;
+    ClipboardSync::PairingStore host(fixture.directory / "host.dat", "host");
+    ClipboardSync::PairingStore client(fixture.directory / "client.dat", "client");
+    const auto code = host.CreateInvite(1000);
+    MsimeClipboardLan::PairingCode key;
+    REQUIRE(MsimeClipboardLan::DecodePairingCode(code, key));
+    REQUIRE(client.AddPeer(code, ""));
+    REQUIRE(host.DiscoverySecret(key.key_id, "client", 1299));
+    REQUIRE(host.Devices()->empty());
+    REQUIRE(!host.DiscoverySecret(key.key_id, "client", 1300));
+    REQUIRE(!host.RememberAddress(key.key_id, "client", "127.0.0.1"));
+    REQUIRE(host.Authorize(key.key_id, "client", 1299));
+    REQUIRE(host.DiscoverySecret(key.key_id, "client", 5000));
+    REQUIRE(!host.DiscoverySecret(key.key_id, "impostor", 5000));
+    REQUIRE(!host.RememberAddress(key.key_id, "impostor", "127.0.0.3"));
+    REQUIRE(!host.RememberAddress(key.key_id, "client", "8.8.8.8"));
+    REQUIRE(host.RememberAddress(key.key_id, "client", "127.0.0.1"));
+    REQUIRE(host.RememberAddress(key.key_id, "client", "127.0.0.3"));
+    const auto relocated = host.Devices();
+    REQUIRE(relocated && relocated->size() == 1);
+    REQUIRE_EQ(relocated->front().key.secret, key.secret);
+    REQUIRE_EQ(relocated->front().address, std::string("127.0.0.3"));
+    REQUIRE(host.RemovePeer("client"));
+    REQUIRE(!host.DiscoverySecret(key.key_id, "client", 5000));
+}
+
+TEST_CASE(clipboard_service_bilateral_tls_pairing_and_ip_migration_without_new_code)
+{
+    Fixture fixture;
+    const auto local = ClipboardHistory::LocalDeviceId();
+    auto client = ClipboardSync::OpenPairingStore();
+    ClipboardSync::PairingStore host(fixture.directory / "host.dat", "remote");
+    const auto code = host.CreateInvite(ClipboardSync::UnixNow());
+    MsimeClipboardLan::PairingCode key;
+    REQUIRE(MsimeClipboardLan::DecodePairingCode(code, key));
+    REQUIRE(client.AddPeer(code, ""));
+    struct Remote
+    {
+        ClipboardSync::TlsListener tls;
+        ClipboardSync::LanDiscovery udp{"remote"};
+        std::atomic<bool> stop{false};
+        std::thread worker;
+        ~Remote()
+        {
+            stop = true;
+            if (worker.joinable())
+                worker.join();
+        }
+    };
+    auto connect = [&](const std::string &address, unsigned short udp_port, const std::string &record_id) {
+        auto remote = std::make_unique<Remote>();
+        REQUIRE(remote->tls.Open(address, 0));
+        REQUIRE(remote->udp.Open(address, udp_port, remote->tls.Port()));
+        auto probe = key;
+        probe.device = local;
+        REQUIRE(remote->udp.Request(probe, {{"127.0.0.2", remote->udp.Port()}}));
+        remote->worker = std::thread([&, ptr = remote.get(), record_id, probe] {
+            ClipboardSync::TlsCallbacks callbacks{
+                [&](const auto &id) { return host.Lookup(id, ClipboardSync::UnixNow()); },
+                [&](const auto &id, const auto &device) {
+                    return host.Authorize(id, device, ClipboardSync::UnixNow());
+                },
+                [record_id](const auto &) {
+                    const auto text = record_id + " 双向配对和换址测试";
+                    return std::vector<MsimeClipboardSync::Record>{
+                        {record_id, text, ClipboardRecord::HashText(text), "remote", 42}};
+                },
+                [](const auto &, const auto &) { return true; }, [](const auto &) {}};
+            auto next_probe = std::chrono::steady_clock::now();
+            while (!ptr->stop)
+            {
+                if (std::chrono::steady_clock::now() >= next_probe)
+                {
+                    ptr->udp.Request(probe, {{"127.0.0.2", ptr->udp.Port()}});
+                    next_probe = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+                }
+                ptr->udp.Poll(
+                    [&](const auto &id, const auto &device) {
+                        return host.DiscoverySecret(id, device, ClipboardSync::UnixNow());
+                    },
+                    ptr->stop);
+                ptr->tls.Poll("remote", callbacks, ptr->stop);
+            }
+        });
+        return remote;
+    };
+    auto first = connect("127.0.0.1", 0, "first-ip");
+    const auto udp_port = first->udp.Port();
+    ClipboardSync::StartLanService(first->tls.Port(), "127.0.0.2", udp_port);
+    auto waitFor = [&](const std::string &address, const std::string &record_id) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(6);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            const auto devices = client.Devices();
+            bool imported = false;
+            for (const auto &record : ClipboardHistory::LoadRecords())
+                imported |= record.id == record_id;
+            if (devices && devices->size() == 1 && devices->front().address == address && imported)
+                return true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        return false;
+    };
+    const bool paired = waitFor("127.0.0.1", "first-ip");
+    const auto reciprocal = host.Devices();
+    first.reset();
+    auto moved = connect("127.0.0.3", udp_port, "moved-ip");
+    const bool reconnected = waitFor("127.0.0.3", "moved-ip");
+    fixture.Enable(false);
+    ClipboardSync::StopLanService();
+    moved.reset();
+    REQUIRE(paired);
+    REQUIRE(reciprocal && reciprocal->size() == 1);
+    REQUIRE_EQ(reciprocal->front().key.device, local);
+    REQUIRE_EQ(reciprocal->front().key.secret, key.secret);
+    REQUIRE(reconnected);
+    const auto saved = client.Devices();
+    REQUIRE(saved && saved->size() == 1);
+    REQUIRE_EQ(saved->front().key.secret, key.secret);
+}
 
 TEST_CASE(clipboard_pairing_single_use_invite_dpapi_persistence_and_revoke)
 {

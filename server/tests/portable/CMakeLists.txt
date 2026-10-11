@@ -51,13 +51,15 @@ add_test(NAME portable_tests COMMAND portable_tests)
 find_package(OpenSSL 3.0 REQUIRED)
 find_package(Threads REQUIRED)
 add_executable(clipboard_tls_tests main.cpp
+    "${SERVER_ROOT}/tests/src/test_clipboard_discovery.cpp"
+    "${SERVER_ROOT}/src/sync/clipboard_discovery.cpp"
     "${SERVER_ROOT}/tests/src/test_clipboard_tls.cpp"
     "${SERVER_ROOT}/src/sync/clipboard_tls.cpp"
     "${SERVER_ROOT}/src/clipboard/clipboard_record.cpp")
 target_include_directories(clipboard_tls_tests PRIVATE "${SERVER_ROOT}" "${SERVER_ROOT}/src" "${SERVER_ROOT}/..")
 target_link_libraries(clipboard_tls_tests PRIVATE OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
 if(WIN32)
-    target_link_libraries(clipboard_tls_tests PRIVATE ws2_32)
+    target_link_libraries(clipboard_tls_tests PRIVATE ws2_32 iphlpapi)
 endif()
 if(MSVC)
     target_compile_options(clipboard_tls_tests PRIVATE /utf-8)
@@ -92,13 +94,14 @@ if(WIN32)
         "${SERVER_ROOT}/src/sync/clipboard_pairing.cpp"
         "${SERVER_ROOT}/src/sync/clipboard_sync_service.cpp"
         "${SERVER_ROOT}/src/sync/clipboard_tls.cpp"
+        "${SERVER_ROOT}/src/sync/clipboard_discovery.cpp"
         "${SERVER_ROOT}/src/config/credential_protection.cpp"
         "${SERVER_ROOT}/src/clipboard/clipboard_history.cpp"
         "${SERVER_ROOT}/src/clipboard/clipboard_record.cpp"
         "${SERVER_ROOT}/src/sync/clipboard_receive_policy.cpp")
     target_include_directories(clipboard_pairing_tests PRIVATE "${SERVER_ROOT}" "${SERVER_ROOT}/src"
         "${SERVER_ROOT}/.." "${NLOHMANN_JSON_INCLUDE_DIR}")
-    target_link_libraries(clipboard_pairing_tests PRIVATE OpenSSL::SSL OpenSSL::Crypto ws2_32 crypt32 user32)
+    target_link_libraries(clipboard_pairing_tests PRIVATE OpenSSL::SSL OpenSSL::Crypto ws2_32 crypt32 user32 iphlpapi)
     target_compile_options(clipboard_pairing_tests PRIVATE /utf-8)
     add_test(NAME clipboard_pairing_tests COMMAND clipboard_pairing_tests)
     set_tests_properties(clipboard_pairing_tests PROPERTIES TIMEOUT 30)

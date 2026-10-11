@@ -19,6 +19,7 @@ set(TEST_SOURCE_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_clipboard_history.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_clipboard_sync.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_clipboard_tls.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/test_clipboard_discovery.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_clipboard_pairing.cpp"
     "${CMAKE_SOURCE_DIR}/src/sync/clipboard_receive_policy.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_kaomoji_sql.cpp"

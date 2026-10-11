@@ -1,5 +1,6 @@
 #include "sync/clipboard_sync_service.h"
 #include "sync/clipboard_tls.h"
+#include "sync/clipboard_discovery.h"
 #include "clipboard/clipboard_history.h"
 #include "utils/common_utils.h"
 
@@ -21,10 +22,11 @@ struct Service
     std::atomic<bool> stop{true};
     std::mutex mutex;
     std::condition_variable wake;
-    std::thread listener, sender;
+    std::thread listener, sender, discovery;
     HANDLE reset_event = nullptr;
     std::vector<ClipboardSync::PairedDevice> peers;
     std::map<std::string, std::vector<MsimeClipboardSync::Record>> pending;
+    std::map<std::string, std::pair<ClipboardSync::DiscoveredPeer, std::chrono::steady_clock::time_point>> endpoints;
 };
 Service g_service;
 std::mutex g_lifecycle;
@@ -36,6 +38,7 @@ void ApplyResetLocked()
     if (g_service.reset_event && WaitForSingleObject(g_service.reset_event, 0) == WAIT_OBJECT_0)
     {
         g_service.pending.clear();
+        g_service.endpoints.clear();
         ResetEvent(g_service.reset_event);
     }
 }
@@ -52,6 +55,12 @@ void RefreshPeers(const ClipboardSync::PairingStore &store)
     for (auto it = g_service.pending.begin(); it != g_service.pending.end();)
         if (!active.count(it->first) || !ClipboardHistory::IsSyncEnabled())
             it = g_service.pending.erase(it);
+        else
+            ++it;
+    for (auto it = g_service.endpoints.begin(); it != g_service.endpoints.end();)
+        if (!active.count(it->first) || !ClipboardHistory::IsSyncEnabled() ||
+            std::chrono::steady_clock::now() - it->second.second > std::chrono::seconds(30))
+            it = g_service.endpoints.erase(it);
         else
             ++it;
 }
@@ -163,12 +172,78 @@ void Send(const std::string &local_device, const ClipboardSync::PairingStore &st
         {
             if (g_service.stop || !ClipboardHistory::IsSyncEnabled())
                 break;
-            if (!peer.address.empty())
-                ClipboardSync::TlsExchange(peer.address, port, peer.key, local_device, Callbacks(store),
-                                           g_service.stop);
+            ClipboardSync::DiscoveredPeer endpoint{peer.key.device, peer.key.key_id, peer.address, port};
+            {
+                std::lock_guard<std::mutex> lock(g_service.mutex);
+                const auto found = g_service.endpoints.find(peer.key.key_id);
+                if (found != g_service.endpoints.end() && found->second.first.device == peer.key.device)
+                    endpoint = found->second.first;
+            }
+            if (!endpoint.address.empty() && ClipboardSync::TlsExchange(endpoint.address, endpoint.port, peer.key,
+                                                                        local_device, Callbacks(store), g_service.stop))
+                store.RememberAddress(peer.key.key_id, peer.key.device, endpoint.address);
         }
         std::unique_lock<std::mutex> lock(g_service.mutex);
         g_service.wake.wait_for(lock, std::chrono::seconds(1), [] { return g_service.stop.load(); });
+    }
+}
+
+void Discover(const std::string &local_device, const ClipboardSync::PairingStore &store, unsigned short tcp_port,
+              unsigned short udp_port, const std::string &bind_address)
+{
+    std::unique_ptr<ClipboardSync::LanDiscovery> discovery;
+    auto next_request = std::chrono::steady_clock::now();
+    while (!g_service.stop)
+    {
+        if (!ClipboardHistory::IsSyncEnabled())
+        {
+            discovery.reset();
+            std::lock_guard<std::mutex> lock(g_service.mutex);
+            g_service.endpoints.clear();
+        }
+        else if (!discovery)
+        {
+            auto candidate = std::make_unique<ClipboardSync::LanDiscovery>(local_device);
+            if (candidate->Open(bind_address, udp_port, tcp_port))
+            {
+                discovery = std::move(candidate);
+                next_request = std::chrono::steady_clock::now();
+            }
+        }
+        if (!discovery)
+        {
+            std::unique_lock<std::mutex> lock(g_service.mutex);
+            g_service.wake.wait_for(lock, std::chrono::milliseconds(200), [] { return g_service.stop.load(); });
+            continue;
+        }
+        if (std::chrono::steady_clock::now() >= next_request)
+        {
+            const auto peers = store.Devices();
+            const auto broadcasts = bind_address == "0.0.0.0" ? ClipboardSync::LanBroadcasts(udp_port)
+                                                              : std::vector<ClipboardSync::DiscoveryDestination>{};
+            if (peers)
+                for (const auto &peer : *peers)
+                {
+                    auto targets = broadcasts;
+                    if (!peer.address.empty())
+                        targets.push_back({peer.address, udp_port});
+                    discovery->Request(peer.key, targets);
+                }
+            next_request = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+        }
+        const auto endpoints = discovery->Poll(
+            [&store](const std::string &key, const std::string &device) {
+                return ClipboardHistory::IsSyncEnabled() ? store.DiscoverySecret(key, device, ClipboardSync::UnixNow())
+                                                         : std::nullopt;
+            },
+            g_service.stop);
+        if (!endpoints.empty() && ClipboardHistory::IsSyncEnabled())
+        {
+            std::lock_guard<std::mutex> lock(g_service.mutex);
+            for (const auto &endpoint : endpoints)
+                g_service.endpoints[endpoint.key_id] = {endpoint, std::chrono::steady_clock::now()};
+            g_service.wake.notify_all();
+        }
     }
 }
 } // namespace
@@ -186,7 +261,7 @@ ClipboardSync::PairingStore ClipboardSync::OpenPairingStore()
                         ClipboardHistory::LocalDeviceId());
 }
 
-void ClipboardSync::StartLanService(unsigned short port, const std::string &bind_address)
+void ClipboardSync::StartLanService(unsigned short port, const std::string &bind_address, unsigned short discovery_port)
 {
     std::lock_guard<std::mutex> lifecycle(g_lifecycle);
     if (!g_service.stop)
@@ -204,6 +279,9 @@ void ClipboardSync::StartLanService(unsigned short port, const std::string &bind
     g_service.listener = std::thread(
         [local_device, store, port, bind_address]() mutable { Listen(local_device, store, port, bind_address); });
     g_service.sender = std::thread([local_device, store, port]() mutable { Send(local_device, store, port); });
+    g_service.discovery = std::thread([local_device, store, port, bind_address, discovery_port]() mutable {
+        Discover(local_device, store, port, discovery_port, bind_address);
+    });
 }
 
 void ClipboardSync::StopLanService()
@@ -216,9 +294,12 @@ void ClipboardSync::StopLanService()
         g_service.listener.join();
     if (g_service.sender.joinable())
         g_service.sender.join();
+    if (g_service.discovery.joinable())
+        g_service.discovery.join();
     std::lock_guard<std::mutex> lock(g_service.mutex);
     g_service.peers.clear();
     g_service.pending.clear();
+    g_service.endpoints.clear();
     if (g_service.reset_event)
     {
         CloseHandle(g_service.reset_event);
@@ -251,8 +332,8 @@ std::string ClipboardSync::SettingsRequest(const std::string &action, const std:
     }
     const auto devices = store.Devices();
     Json response{{"ok", ok && devices.has_value()},
-                  {"message", ok && devices ? "已更新；连接方会自动重试，设备 IP 改变后需重新配对"
-                                            : "操作失败：请检查两个开关、私网 IP、配对码及设备是否已存在"},
+                  {"message", ok && devices ? "已更新；按设备 ID 验证身份，自动发现地址并重连，无需因 IP 改变重新配对"
+                                            : "操作失败：请检查两个开关、配对码、可选私网地址及设备是否已存在"},
                   {"localDevice", ClipboardHistory::LocalDeviceId()},
                   {"devices", Json::array()}};
     if (!invitation.empty())
