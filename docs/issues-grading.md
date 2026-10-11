@@ -1,195 +1,178 @@
-# 问题分级与二改排期
+# 问题分级与二改路线（v2 · 目标对齐版）
 
-- 依据：`docs/issues-triage.md`（2026-10-11 上游 issue 快照，open 161 条）
-- 用途：为 fork 二改提供可直接排期的优先级与模块落点
-- 注意：**工作量（F 值）是基于当前代码结构的估算，不是实测**；模块路径来自仓库实际目录
+- 目标：① 先修 bug ② Android 版 ③ 多设备剪贴板共享
+- 依据：`docs/issues-triage.md`（2026-10-11 上游 issue 快照）
+- 本版变化：按三目标重排；与目标无关的 enhancement 一律降级
+- 说明：F 值为基于当前代码结构的**估算**，未实测；代码事实均已核对仓库实际文件
 
 ## 0. 分级方法
 
-四个维度：
+维度沿用 v1（S 严重度 / A 影响面 / F 成本），新增 **G 目标对齐度**：
 
-| 维度 | 取值 | 含义 |
-|---|---|---|
-| 严重度 S | S0 | 崩溃 / 数据丢失 / 完全不可用 / 波及其他软件 |
-| | S1 | 核心输入路径失效（候选窗、切分、上屏） |
-| | S2 | 特定场景失效、性能退化 |
-| | S3 | 体验不一致、交互不顺手 |
-| | S4 | 外观、文案、文档 |
-| 影响面 A | A0 | 默认路径，全体用户 |
-| | A1 | 常见宿主/场景（IDE、Office、浏览器、多屏） |
-| | A2 | 特定配置或小众方案（某款游戏、某输入方案） |
-| 修复成本 F | F0 | 局部改动，< 1 天 |
-| | F1 | 单模块，1–3 天 |
-| | F2 | 跨模块或跨进程协议，3–10 天 |
-| | F3 | 需重构 / 改契约，> 10 天 |
-| 二改价值 R | 高 / 中 / 低 | 与 fork 目标（插件化、自定义方案、词库、皮肤、AI）的相关度 |
-
-优先级映射：
-
-| 优先级 | 判定 | 处理策略 |
-|---|---|---|
-| P0 | S0 | 立刻修，不修则二改无意义 |
-| P1 | S1 且 A0/A1 | 当前迭代主攻 |
-| P2 | S1 且 A2，或 S2 | 排入后续迭代 |
-| P3 | S3 | 择机，或随相关模块一并改 |
-| P4 | enhancement | 按二改路线图取舍 |
-| P5 | 挂起/僵尸 | 补信息或关闭，不投入开发 |
-
-## 1. P0 阻断级（先修）
-
-| # | 问题 | S | A | 主要落点 | F |
-|---|---|---|---|---|---|
-| 708 | csgo2 游戏内打字导致切屏卡死闪退 | S0 | A2 | `server/src/window/window_hook.cpp`、`windows/src/Tf` | F2 |
-| 797 | 文件移动/扫描时输入法无法正常输入 | S0 | A0 | `server/src/ipc`、`server/src/session`（疑主线程阻塞） | F1 |
-| 701 | 设置窗口一直转圈无法设置 | S0 | A0 | `server/src/settings/settings_app.cpp`、`ui-html/webview2/settings/` | F1 |
-| 68 | 安装向导不显示路径；WebView2 缺失时候选窗一直 cloak | S0 | A0 | `installer/`、`server/src/webview2/` | F1 |
-| 296 | Win11 无法打出中文、无悬浮候选框 | S0 | A0 | `windows/src/Register`、`windows/src/IPC`（需先复现） | F2 |
-| 421 | 安装后系统自带日语输入法候选词消失 | S0 | A1 | `windows/src/Compartment`、`windows/src/Tf`（全局状态污染） | F1 |
-
-## 2. P1 核心输入路径失效（当前迭代主攻）
-
-### 2.1 候选窗显示族（同源，建议合并成一个专项）
-
-| # | 问题 | A | 落点 |
-|---|---|---|---|
-| 93 | 输入一定字数后候选栏消失 | A0 | `server/src/window/candidate_presenter.cpp` |
-| 618 | 单行输入框到末尾时再输入中文无候选框 | A0 | 同上 |
-| 788 | 候选框会消失 | A0 | 同上 |
-| 698 | 候选池选择框空白 | A0 | `ui-html/webview2/candwnd/` |
-| 387 | 网页无法输出中文 | A1 | `windows/src/Edit`、`windows/src/Composition` |
-| 63 | dota2 无法显示候选框 | A2 | `server/src/window/window_hook.cpp` |
-| 733 | 魔兽世界加载时候选框消失 | A2 | 同上 |
-| 781 | APEX 类游戏无法使用输入法 | A2 | 同上 |
-| 783 | UE5.6 隐藏行内预编辑时不显示候选窗 | A2 | `windows/src/DisplayAttribute`、`server/src/window` |
-| 722 | 拓展屏候选项显示 BUG | A1 | `server/src/window/ime_windows_candidate_layout.cpp` |
-| 680 | 符号输入方框（字形缺失） | A1 | `ui-html/webview2/candwnd/skins/`、字体回退 |
-| 772 | 高占用时候选窗不出现/延迟 | A0 | `server/src/window/candidate_presenter.cpp`（同步渲染路径） |
-
-> 判断依据：这批问题的表现都是「窗口已建但不可见 / 被 cloak / Z-order 或帧去重丢帧」，大概率共用 `candidate_presenter` + `ime_windows_candidate_show` 的同一条生命周期；未合并 PR #834（候选帧去重纳入页面状态）正是这条线。
-
-### 2.2 引擎切分 / 模糊音 / 辅助码族
-
-| # | 问题 | A | 落点 |
-|---|---|---|---|
-| 718 | n 结尾音节 + 元音开头音节切分错误 | A0 | `engine/core/input_session_composition.cpp`、`engine/quanpin/word_lattice.cpp` |
-| 803 | 输入 u 或 v（ü）导致不同分词策略 | A0 | `engine/quanpin/quanpin_query.cpp` |
-| 707 | 无法正常触发拼音方案调频 | A0 | `engine/quanpin/lattice_rerank.cpp`、`engine/user_dictionary/` |
-| 710 | 模糊音：双拼识别 l 是否为韵母有问题 | A1 | `engine/quanpin/fuzzy_pinyin.h`、`engine/core/fuzzy_pinyin_options.h` |
-| 671 | 直接辅助码/斜杠未定字反而清空输入 | A1 | `engine/direct_helpcode/`、`engine/helpcode/` |
-| 509 | 切换语言未提交已选择分词 | A1 | `engine/core/input_session_editing.cpp` |
-
-## 3. P2 场景失效 / 性能 / 宿主兼容
-
-### 3.1 日语族（`engine/japanese/`）
-
-| # | 问题 | 落点 | F |
-|---|---|---|---|
-| 662 | 罗马字 `nn` 未按标准转为「ん」 | `engine/japanese/romaji_converter.cpp` | F0（PR #669 已写） |
-| 682 | shift+R 模式无法打出长音「ー」 | 同上 + `engine/schemes/japanese_romaji_scheme.cpp` | F1 |
-| 786 | 日语快捷输入长音符「ー」无法输入 | 同上 | F1 |
-| 741 | 英文大写 “R” 被识别为日文 | `engine/core/`（模式判定） | F1 |
-
-### 3.2 快捷键 / 按键拦截族
-
-| # | 问题 | 落点 | F |
-|---|---|---|---|
-| 762 | Ctrl+. 被拦截，Rider 快速修复失效且无法解绑 | `windows/src/Key`、配置项 | F1 |
-| 188 | 少数软件中 Ctrl+ 快捷键失效并输入字符 | `windows/src/Key`、`windows/src/Edit` | F1 |
-
-### 3.3 宿主软件 / 编辑行为兼容
-
-| # | 问题 | 落点 | F |
-|---|---|---|---|
-| 688 | Word 中无法打出不可换行空格 | `windows/src/Edit` | F1 |
-| 689 | CAT 软件补齐标点时光标异常左移 | `engine/core/preedit_caret_map.h` 相关 | F1 |
-| 60 | Edge Legacy 快捷键未能切换输入模式 | `windows/src/Key` | F1 |
-| 818 | 大小写倒置 | `windows/src/Composition` | F1 |
-| 773 | 每应用窗口不同输入法时悬浮栏状态错误 | `server/src/window/floating_toolbar_presenter.cpp` | F1 |
-
-### 3.4 渲染细节 / 性能
-
-| # | 问题 | 落点 | F |
-|---|---|---|---|
-| 505 | 任务栏在顶部时右键图标超出屏幕 | `server/src/window/tray_menu_placement.h` | F0 |
-| 58 | 语言栏图标发虚（高 DPI） | `windows/src/LanguageBar` | F1 |
-| 438 | 每次打开设置都要重新加载 | `server/src/settings/settings_launcher.cpp` | F1 |
-
-## 4. P3 体验一致性（随模块一并处理）
-
-- 候选排序/调频类：#22、#308、#464、#705
-- 候选交互类：#20、#21、#468、#702、#714、#763、#779、#812、#734、#439
-- 标点/上屏类：#768、#695、#748、#704
-- 工具栏/面板类：#205、#372、#811、#728、#715、#805
-- 设置页：#743（全局搜索）、#719（安装界面）
-
-## 5. P4 需求：二改路线图（按契约影响排序）
-
-### 5.1 低风险、可增量（不动契约）
-
-| 主题 | 相关 issue |
+| G | 含义 |
 |---|---|
-| 皮肤/主题 | 819、752、750、325 |
-| 快捷短语 | 826、686、758、646 |
-| 符号/特殊字符 | 795、759、33、636、777、40、699 |
-| 本地模式/时间日期 | 312、531、532 |
-| AI 配置体验 | 46、656、810、235 |
+| G1 | 直接服务目标②或③ |
+| G2 | 间接支撑（Android 或同步也要用到的能力） |
+| G3 | 与三目标无关 |
 
-### 5.2 中风险（改 engine 内部，不动 IPC 契约）
+排序规则：**bug 一律优先（目标①）**；enhancement 按 G1 > G2 > G3，G3 降为「接受外部 PR，不主动投入」。
 
-| 主题 | 相关 issue | 落点 |
+## 1. ⚠️ 先决判断：目标② 可能不该在本仓做
+
+已核实的事实：
+
+- 组织内存在 `metasequoiaime/msime`，官方定位是「**下一代跨平台水杉输入法（MSIME）：面向 Android、iOS、macOS、Linux、Windows 与 HarmonyOS 的多平台中文输入法，使用共享输入引擎与各平台原生宿主**」。
+- 该仓技术栈是 **Rust + TypeScript**（有 `Cargo.toml`、`pnpm-workspace.yaml`），顶层为 `crates/`、`apps/`、`platforms/`、`packages/`、`shared/`。
+- **`platforms/android` 已经存在**（main / develop / master 三个分支都有），同级还有 `ios`、`harmony`、`macos`、`linux`、`windows`、`common`。
+- 原 `msime-linux` 仓已归档，注明「已迁移到 msime 主仓」。
+- `msime-cloud` 是 Go 共通后端（云候选、AI 联想、翻译、语音识别、Swagger 文档）。
+
+本仓 `msime-windows` 是 **C++ / Win32 / WebView2** 技术栈，与 `msime` 的重写栈不同。因此目标②有两条互斥路线：
+
+| 路线 | 做法 | 优点 | 代价 |
+|---|---|---|---|
+| **A（推荐）** | 在 `msime` 仓或其 fork 上推进 Android 宿主 | 复用上游已有的 `platforms/android`、Rust 引擎与跨平台契约，不重复造轮子 | 需先熟悉 Rust/TS 栈；与修 bug 分属两个仓库 |
+| B | 在本仓把 C++ 引擎用 NDK 编到 Android，自建宿主 | 与现有 C++ 引擎、词库产物同源 | 与上游重写方向分叉；Android 宿主/JNI/UI 全部自建；后续难与上游同步 |
+
+**结论**：若目标是「尽快有可用的安卓版」→ 走 A；只有在「必须在 C++ 引擎上做 Android」时才走 B。
+
+### 路线 B 的可行性审计（已核实）
+
+- `engine/docs/runtime-architecture.md` 明确：Engine 只负责可移植输入行为，平台宿主负责原生按键 / UI / 权限 / 网络 / 插入文本；新平台入口是 `<metasequoia/session.h>` 并链接 `MetasequoiaIme::Engine`（`engine/CMakeLists.txt:129`）。
+- engine 一方源文件 **266 个**（已排除第三方），Windows 专属引用仅 **25 处**：
+  - `engine/voice/platforms/windows/*` 8 处 —— 已按平台隔离，Android 需新增 `platforms/android/`
+  - `engine/voice/third_party/miniaudio` 8 处、kenlm / googlepinyinime 若干 —— 属第三方
+  - **核心阻塞只有 2 个文件**：`engine/core/data_path.h`、`engine/core/key_event.h`，二者均 `#include <Windows.h>`，且被约 24 处 include 链波及
+- 已有可照抄的平台分支范式：`engine/japanese/japanese_sentence_decoder.cpp` 使用 `#ifdef _WIN32`。
+- 资源与用户数据：`prepare_runtime_paths(resource, user, cache, digest)` 要求三棵目录树互不包含、路径必须绝对 —— Android 可直接映射到 app 私有目录。
+- 候选窗 UI 可复用 `ui-html/webview2/candwnd` 与 `shared/`（由 `engine/contracts/webview/` 生成），Android 用 WebView 承载。
+
+## 2. 目标①：修 bug（沿用 v1 分级，收敛为批次）
+
+### P0 阻断（6 项，先修）
+
+| # | 问题 | 主要落点 | F |
+|---|---|---|---|
+| 708 | csgo2 游戏内打字→切屏卡死闪退 | `server/src/window/window_hook.cpp` | F2 |
+| 797 | 文件移动/扫描时输入法无法输入 | `server/src/ipc`、`server/src/session` | F1 |
+| 701 | 设置窗口一直转圈无法设置 | `server/src/settings/settings_app.cpp` | F1 |
+| 68 | 安装向导无路径；WebView2 缺失时候选窗 cloak | `installer/`、`server/src/webview2/` | F1 |
+| 296 | Win11 无法打出中文、无候选框 | `windows/src/Register`、`windows/src/IPC` | F2 |
+| 421 | 装完后系统自带日语输入法候选词消失 | `windows/src/Compartment`、`windows/src/Tf` | F1 |
+
+### P1 核心输入路径（18 项）
+
+**2.1 候选窗显示族（12 项，同源，建议一个专项）**
+93、618、788、698、387、63、733、781、783、722、680、772
+→ 共用 `server/src/window/candidate_presenter.cpp` + `ime_windows_candidate_show.cpp` 生命周期；未合并 PR **#834** 就在这条线上。
+
+**2.2 引擎切分 / 模糊音 / 辅助码族（6 项）**
+718、803、707、710、671、509
+→ `engine/core/input_session_composition.cpp`、`engine/quanpin/`、`engine/direct_helpcode/`
+
+### P2 场景 / 性能 / 宿主兼容（13 项）
+
+- 日语族：662、682、786、741 → `engine/japanese/romaji_converter.cpp`
+- 快捷键拦截：762、188 → `windows/src/Key`
+- 宿主兼容：688、689、60、818、773
+- 渲染细节：505、58、438
+
+### P5 清理（不投入开发）
+
+`needs-info` 42/68/296；`can't reproduce` 58/296/387；`wontfix` 未关 644；无标签 831/748/665。
+
+## 3. 目标②：Android
+
+### 相关 issue 重排
+
+| issue | 原级 | 新级 | 理由 |
+|---|---|---|---|
+| 761 注音输入模式 | P4 | **G1** | 台湾用户明确刚需，移动端权重高 |
+| 759 / 33 符号输入混输 | P4 | **G1** | 移动端无实体键盘，更依赖符号面板 |
+| 734 / 21 网格、多列候选 | P4 | **G1** | 触屏更适合网格布局 |
+| 805 竖屏优化 | P4 | **G1** | 手机以竖屏为主 |
+| 615 Rime 支持 | P4 | G2 | 跨平台输入方案 |
+| 744 / 663 自定义方案 | P4 | G2 | 移动端换方案需求 |
+| 754 / 634 / 660 / 664 五笔 | P4 | G2 | 同上 |
+| 235 纯本地模式 | P4 | G2 | 移动端流量与隐私 |
+| 730 插件系统 | P4 | G3 | 架构重，暂缓 |
+
+### 使能工作（无对应 issue，需新建）
+
+| # | 任务 | 落点 |
 |---|---|---|
-| 输入方案扩展 | 754（五笔98）、634/660/664（五笔混输）、42（二笔）、761（注音） | `engine/schemes/` |
-| 双拼/简拼优化 | 392、70、808、414、789、20、322、64 | `engine/shuangpin/`、`engine/local_modes/jianpin_query.cpp` |
-| 词库管理 | 684、755、778、645、668 | `server/src/settings/dictionary_manager.cpp` |
-| 日语模式扩展 | 685、72 | `engine/japanese/` |
+| E1 | 解除 engine 核心 Windows 依赖 | `engine/core/data_path.h`、`engine/core/key_event.h` |
+| E2 | 新增 Android 语音平台实现 | `engine/voice/platforms/android/` |
+| E3 | Android 宿主（IME Service + JNI） | 路线 A：`msime/platforms/android`；路线 B：新仓 |
+| E4 | Android 构建（NDK + CMake、SQLite 与资源包 ABI） | 新增构建脚本 |
+| E5 | 候选窗 WebView 承载 + 契约同步 | `ui-html/webview2/candwnd`、`shared/` |
+| E6 | 词库与资源包适配 Android | `product-lock.json` 的 `dict-*` release |
 
-### 5.3 高风险（改契约 / 跨进程，需先定架构）
+### 风险
 
-| 主题 | 相关 issue | 影响 |
+- 词库 / 资源包目前是 Windows 产物，Android 需重新打包或复用同一份数据。
+- 语音模块的 Windows 实现不可用，Android 必须新写平台实现。
+- 路线 B 会与上游 `msime` 重写分叉，长期维护成本高。
+
+## 4. 目标③：多设备剪贴板共享
+
+### 现状（已核实）
+
+- `server/src/clipboard/clipboard_history.{h,cpp}`：**仅本地历史**，文件存储，上限 50 条 / 4000 字符，接口用 `std::wstring`；同目录只有 `ClipboardMonitor::{Start,Stop,Sync}`，**没有任何传输层**。
+- `server/src/cloud/`：现有云端客户端（云候选、翻译），是接同步协议的现成位置。
+- `msime-cloud`：Go 共通后端（云候选、AI、翻译、语音识别、Swagger）→ **同步服务的天然落点**。
+
+### 相关 issue 重排
+
+| issue | 原级 | 新级 | 理由 |
+|---|---|---|---|
+| 678 同步功能（WebDAV / Rime 式） | P4 | **G1** | 直接服务目标③，且明确要求含配置 + 词库 |
+| 712 手机电脑同步复制 | P4 | **G1** | 目标③的字面需求 |
+| 811 剪切面板独立到工具导航条 | P3 | G2 | 剪贴板 UI 前置 |
+| 826 快捷短语支持多行 | P4 | G2 | 剪贴板文本多为多行 |
+| 646 / 645 短语与词库的删除 | P4 | G2 | 与 678 的「词库同步」同域 |
+| 798 统计同步 | P4 | G3 | 走同一通道但非剪贴板 |
+
+### 使能工作（需新建）
+
+| # | 任务 | 落点 |
 |---|---|---|
-| 插件系统 | 730 | 需在 `engine/contracts/` 定义插件边界，牵动 windows/server 两侧 |
-| Rime 接入 | 615 | 需引入独立引擎后端与配置映射 |
-| 自定义方案导入 | 744、663 | 需方案描述格式 + 校验，涉及设置页与服务端双向 |
-| 跨端同步/统计 | 678、798、712 | 需新增服务端与协议 |
-| 多语言模式 | 61、294、458、461、85 | 需扩展 trilingual/方案层 |
-| 网格候选 / 多行多列 | 734、21 | 需改候选布局契约与 candwnd 渲染 |
+| S1 | 数据模型改造：条目加 id / 时间戳 / 来源设备 / 哈希 | `server/src/clipboard/clipboard_history.*` |
+| S2 | 同步协议与端点 | `msime-cloud`（Go） |
+| S3 | Windows 端同步器 | `server/src/cloud/` 或新增 `server/src/sync/` |
+| S4 | 安全：设备配对 + 端到端加密 + 按设备开关 | 新增 |
+| S5 | UI：设备列表与同步开关 | `ui-html/webview2/settings/` |
+| S6 | Android 端接入 | 取决于路线 A / B |
 
-## 6. P5 清理项（不投入开发）
+### 待定决策
 
-| 类型 | # | 建议 |
+1. **传输**：`msime-cloud` 中转 / WebDAV（#678 提议）/ 局域网直连 / P2P。
+2. **范围**：只剪贴板，还是同时含配置 + 词库（#678 明确要求后者）。
+3. **安全**：剪贴板内容高度敏感，必须端到端加密 + 设备配对，不能明文上云。
+4. **冲突策略**：多设备并发写入的合并规则。
+
+## 5. 目标不对齐的 enhancement（降级：接受外部 PR，不主动投入）
+
+皮肤 / 主题 819、752、750、325；AI 与翻译 46、656、810、815、653、780、651、602；时间日期 312、531、532；LaTeX 699；网址邮箱 409；安装界面 719；工具栏淡出 205、372；标点面板 728；模糊音交互 715。
+
+## 6. 迭代顺序
+
+| 批次 | 内容 | 对应目标 |
 |---|---|---|
-| needs-info | 42、68、296 | 补齐复现信息或关闭 |
-| can't reproduce | 58、296、387 | 要求提供版本/日志，超期关闭 |
-| wontfix 未关闭 | 644 | 直接关闭 |
-| 未打标签 | 831、748、665 | 补标签后归入对应优先级 |
+| 0 | 合 #669 / #832 / #834；关闭 644、296 等僵尸项 | 清账 |
+| 1 | P0 六项 | ① |
+| 2 | P1 候选窗专项（12 项同源） | ①（同时是 Android 复用 candwnd 的前置） |
+| 3 | P1 引擎切分族 + P2 日语族 | ① |
+| 4 | **先决：选定 Android 路线 A / B** | ② |
+| 5 | Android 使能 E1–E6 | ② |
+| 6 | 剪贴板同步 S1–S6 | ③ |
+| 7 | P2 快捷键 / 宿主兼容 + G2 功能 | ① |
 
-## 7. 立刻可用的增益
+批次 5、6 可与批次 2、3 并行（不同人 / 不同分支）。
 
-合并即减少未解决数，零新开发：
+## 7. 需要拍板的四件事
 
-| PR | 内容 | 解决 |
-|---|---|---|
-| 669 | 日语 `nn` 单拨音转换 | #662 |
-| 834 | 候选帧去重纳入页面状态 | 候选窗消失族（P1） |
-| 832 | sccache 不可用时回退 MSVC | #831 |
-
-## 8. 建议迭代顺序
-
-| 迭代 | 内容 | 目标 |
-|---|---|---|
-| 迭代 0 | 合并 #669/#832/#834；关闭 #644、#296 等僵尸项 | 清账、建立基线 |
-| 迭代 1 | P0 六项（#708、#797、#701、#68、#296、#421） | 消除崩溃与完全不可用 |
-| 迭代 2 | P1 候选窗专项（12 项同源簇） | 解决占比最大的用户可见缺陷 |
-| 迭代 3 | P1 引擎切分族 + P2 日语族 | 提升输入正确率 |
-| 迭代 4 | P2 快捷键/宿主兼容族 | 覆盖 IDE 与 Office 用户 |
-| 迭代 5+ | P4 路线图，按 5.1 → 5.2 → 5.3 推进 | 二改功能扩展 |
-
-## 9. 同源簇速查
-
-| 簇 | issue | 共用根因假设 |
-|---|---|---|
-| 候选窗不可见/消失 | 63、93、618、722、733、781、783、788、698、772、797 | 候选窗生命周期 / 帧去重 / cloak / Z-order |
-| 日语长音与拨音 | 662、682、786、741 | `romaji_converter` 状态机 |
-| 快捷键拦截 | 188、762 | `windows/src/Key` 的按键放行策略 |
-| 模糊音 | 710、705、715 | `fuzzy_pinyin` 选项与排序 |
-| 音节切分 | 718、803 | `input_session_composition` 切分规则 |
+1. **Android 走路线 A 还是 B？** 上游 `msime` 已有 `platforms/android`，路线 A 大概率更省力。
+2. **剪贴板同步的传输方案**选哪个（cloud 中转 / WebDAV / 局域网）？
+3. **同步范围**是否包含配置与词库（#678 要求包含）？
+4. **是否现在就把 E1（engine 去 Windows 化）排进迭代？** 它是路线 B 的硬前置；若走路线 A 则不需要。
