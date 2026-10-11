@@ -917,6 +917,9 @@ begin
     IsUserSkinDirectory(FileName) or
     IsUserShuangpinDirectory(FileName) or
     IsCollocationModelDirectory(FileName) or
+    { 剪贴板历史与 DPAPI 配对凭证属于用户数据，升级保留、卸载删除。 }
+    (CompareText(FileName, 'clipboard_history.json') = 0) or
+    (CompareText(FileName, 'clipboard_peers.dat') = 0) or
     (CompareText(FileName, DataDirMarkerName) = 0);
 end;
 
@@ -956,7 +959,6 @@ begin
     (CompareText(FileName, 'others.db-shm') = 0) or
     (CompareText(FileName, 'others.db-journal') = 0) or
     (CompareText(FileName, 'user_dict.dat') = 0) or
-    (CompareText(FileName, 'clipboard_history.json') = 0) or
     (CompareText(FileName, 'voice_system_audio_mute_state.txt') = 0) or
     (CompareText(FileName, 'config.toml.tmp') = 0) or
     (CompareText(FileName, 'config.base.toml.tmp') = 0) or

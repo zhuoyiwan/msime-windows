@@ -78,6 +78,16 @@ ctest --test-dir server/tests/portable/build -C Release --output-on-failure
 - 设置页 TypeScript 检查、Vite 生产构建及 **129 个前端用例**通过；**68 个共享 WebView 契约 fixture**通过。本机缺少 `python3` 命令别名，采用同样的 `python sync-contracts.py --check`、`pnpm exec tsc --noEmit` 与 `pnpm exec vite build` 完成构建步骤。
 - Linux ASan/UBSan job 已加入真实 TLS 测试和 libssl-dev 依赖；本机未跑 Linux sanitizer。仍未构建完整 Server/设置 EXE/安装包，也未进行真实双机安装、Android 互通或不同 DPI 下的设置页目视验证。
 
+## 本地打包检查：用户数据保留
+
+- 修正安装器的覆盖安装保留名单：剪贴板历史和 DPAPI 配对凭证升级时保留、卸载时删除，与数据目录迁移名单一致。否则覆盖安装会清空历史，并因设备身份变化使原配对失效。
+- `installer/tests/preserve-user-data.ps1` 加入两项回归约束；保留/迁移名单检查、完整/轻量打包契约和构建失败中止检查均通过。
+- 使用静态解包的 Inno Setup 6.7.3 编译器通过 WebView2 检测探针；没有安装编译器或更改系统 WebView2。
+- 为 `msime_clipboard_lan` 补上 MSVC `/utf-8`：完整构建发现该目标早于目录级编译选项创建，按本机代码页解析中文注释会吞掉后续命名空间声明；独立测试目标已有此选项，所以之前没有暴露。
+- Visual Studio 2022 完整构建 x86、x64 TSF DLL；两套各 12 项 CTest 全部通过。Server、设置程序及全部面板也已完整构建，Server 的 **666 个用例**、语音控制测试及 **68 个共享契约 fixture** 在隔离数据目录通过。
+- 本地从干净的 `msime-dictionary` 提交 `4909582a8ce345c23809750e675e3d9e5f9516df` 构建完整词库；语言模型和神经模型通过各自锁文件摘要校验。构建依赖使用 vcpkg 锁定基线，TLS 用 OpenSSL 3.6.4。
+- Inno Setup 6.7.3 编译完整未签名测试包 `MetasequoiaIME_Setup_v0.7.1-local-20261011-unsigned.exe`，归档完整性检查通过。没有安装、注册 TSF、信任测试证书或修改防火墙；实际双机安装、Android 互通和 DPI 目视验证仍未执行。
+
 ## 后续
 
 继续真实双机安装与完整构建验证，加入自动发现，并在已选路线 A 的 msime 仓实现 Android 宿主及此 TLS profile 对接。P0 真实场景复现仍需继续，不把相关基础改动当成所有反馈均已修复。

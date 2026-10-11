@@ -17,7 +17,8 @@ $iss = [IO.File]::ReadAllText((Resolve-Path $issPath))
 $required = @(
     'msime_user.db', 'msime_user.db-wal', 'msime_user.db-shm', 'msime_user.db-journal',
     'stats.db', 'stats.db-wal', 'stats.db-shm', 'stats.db-journal',
-    'config.toml', 'config.base.toml'
+    'config.toml', 'config.base.toml',
+    'clipboard_history.json', 'clipboard_peers.dat'
 )
 
 # 目录类用户数据由 MigrateUserDataDir 单独 robocopy，迁移清单按文件解析取不到它们。
