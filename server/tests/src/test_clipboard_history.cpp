@@ -156,3 +156,54 @@ TEST_CASE(clipboard_history_disabled_capture_leaves_history_untouched)
     REQUIRE(!ClipboardHistory::AddText(L"ignored"));
     REQUIRE_EQ(fixture.Read(), before);
 }
+
+TEST_CASE(clipboard_history_import_persists_remote_metadata_without_rebroadcast)
+{
+    using ClipboardSync::ImportResult;
+    ClipboardFixture fixture;
+    REQUIRE(ClipboardHistory::AddText(L"local"));
+    const auto local = RecordAt(0);
+    const ClipboardRecord::Record remote{"remote-id", "from peer", ClipboardRecord::HashText("from peer"), "peer", 123};
+    REQUIRE_EQ(ClipboardHistory::ImportRecord(remote, "peer"), ImportResult::Imported);
+    const auto received = RecordAt(0);
+    REQUIRE_EQ(received.id, remote.id);
+    REQUIRE_EQ(received.origin_device, remote.origin_device);
+    REQUIRE_EQ(received.created_at, remote.created_at);
+    REQUIRE_EQ(TextAt(0), std::wstring(L"from peer"));
+    REQUIRE(!ClipboardSync::IsPublishableLocalCapture(received, local.origin_device));
+    REQUIRE(ClipboardSync::IsPublishableLocalCapture(RecordAt(1), local.origin_device));
+    const auto before = fixture.Read();
+    REQUIRE_EQ(ClipboardHistory::ImportRecord(remote, "peer"), ImportResult::Duplicate);
+    REQUIRE_EQ(fixture.Read(), before);
+    REQUIRE_EQ(ClipboardHistory::ImportRecord(remote, "impostor"), ImportResult::UnauthorizedOrigin);
+    REQUIRE_EQ(fixture.Read(), before);
+}
+
+TEST_CASE(clipboard_history_remote_import_honors_disable_and_write_failure)
+{
+    using ClipboardSync::ImportResult;
+    ClipboardFixture fixture;
+    REQUIRE(ClipboardHistory::AddText(L"local"));
+    const auto before = fixture.Read();
+    const ClipboardRecord::Record remote{"remote-id", "remote", ClipboardRecord::HashText("remote"), "peer", 123};
+    const HANDLE reader = CreateFileW(ClipboardHistory::StorePath().c_str(), GENERIC_READ,
+                                      FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+    REQUIRE(reader != INVALID_HANDLE_VALUE);
+    const auto result = ClipboardHistory::ImportRecord(remote, "peer");
+    CloseHandle(reader);
+    REQUIRE_EQ(result, ImportResult::StoreUnavailable);
+    REQUIRE_EQ(fixture.Read(), before);
+    std::ofstream(ClipboardHistory::StorePath().parent_path() / "config.toml")
+        << "[utility]\nclipboard_history = false\n";
+    REQUIRE_EQ(ClipboardHistory::ImportRecord(remote, "peer"), ImportResult::Disabled);
+    REQUIRE_EQ(fixture.Read(), before);
+}
+
+TEST_CASE(clipboard_history_import_refuses_unreadable_store)
+{
+    ClipboardFixture fixture;
+    fixture.Write("{broken");
+    const ClipboardRecord::Record remote{"remote-id", "remote", ClipboardRecord::HashText("remote"), "peer", 123};
+    REQUIRE_EQ(ClipboardHistory::ImportRecord(remote, "peer"), ClipboardSync::ImportResult::StoreUnavailable);
+    REQUIRE_EQ(fixture.Read(), std::string("{broken"));
+}

@@ -124,50 +124,12 @@ struct JsonValue
 
 constexpr int kMaxJsonDepth = 24;
 
-// Validate and count UTF-16 units without depending on the host's wchar_t width.
-bool Utf8Character(std::string_view text, size_t &index, size_t &units)
-{
-    const auto first = static_cast<unsigned char>(text[index]);
-    size_t length = 1;
-    uint32_t code = first;
-    if (first >= 0xc2 && first <= 0xdf)
-    {
-        length = 2;
-        code = first & 0x1f;
-    }
-    else if (first >= 0xe0 && first <= 0xef)
-    {
-        length = 3;
-        code = first & 0x0f;
-    }
-    else if (first >= 0xf0 && first <= 0xf4)
-    {
-        length = 4;
-        code = first & 0x07;
-    }
-    else if (first >= 0x80)
-        return false;
-    if (index + length > text.size())
-        return false;
-    for (size_t i = 1; i < length; ++i)
-    {
-        const auto next = static_cast<unsigned char>(text[index + i]);
-        if ((next & 0xc0) != 0x80)
-            return false;
-        code = (code << 6) | (next & 0x3f);
-    }
-    if ((length == 2 && code < 0x80) || (length == 3 && code < 0x800) || (length == 4 && code < 0x10000) ||
-        code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff))
-        return false;
-    index += length;
-    units = code >= 0x10000 ? 2 : 1;
-    return true;
-}
+using MsimeClipboardSync::ReadUtf8Character;
 
 bool ValidUtf8(std::string_view text)
 {
     for (size_t index = 0, units = 0; index < text.size();)
-        if (!Utf8Character(text, index, units))
+        if (!ReadUtf8Character(text, index, units))
             return false;
     return true;
 }
@@ -612,7 +574,7 @@ std::string ClampUtf8(std::string value, size_t limit, bool &clamped)
     {
         const size_t start = index;
         size_t units = 0;
-        if (!Utf8Character(value, index, units) || total + units > limit)
+        if (!ReadUtf8Character(value, index, units) || total + units > limit)
         {
             clamped = true;
             value.resize(start);

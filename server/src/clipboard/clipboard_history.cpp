@@ -417,6 +417,28 @@ std::vector<std::wstring> ClipboardHistory::Load()
     return items;
 }
 
+ClipboardSync::ImportResult ClipboardHistory::ImportRecord(const ClipboardRecord::Record &record,
+                                                           std::string_view authenticated_peer)
+{
+    using ClipboardSync::ImportResult;
+    if (!IsEnabled())
+        return ImportResult::Disabled;
+    NamedMutex lock(kStoreMutexName);
+    if (!lock)
+        return ImportResult::StoreUnavailable;
+    // Settings may have disabled capture while this writer waited for the store mutex.
+    if (!IsEnabled())
+        return ImportResult::Disabled;
+    ClipboardRecord::ParseResult store;
+    if (!ReadStoreUnlocked(store))
+        return ImportResult::StoreUnavailable;
+    const auto result = ClipboardSync::MergeReceived(store.records, record, authenticated_peer, store.device_id);
+    if ((result == ImportResult::Imported || (result == ImportResult::Duplicate && store.migrated_from_v1)) &&
+        !WriteStoreUnlocked(store))
+        return ImportResult::StoreUnavailable;
+    return result;
+}
+
 bool ClipboardHistory::AddText(std::wstring text)
 {
     text = NormalizeClipboardText(std::move(text));

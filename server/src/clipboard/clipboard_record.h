@@ -17,26 +17,21 @@
 #include <string_view>
 #include <vector>
 
+#include "engine/contracts/clipboard_sync.h"
+
 namespace ClipboardRecord
 {
 // Bump when the on-disk shape changes in a way older readers cannot handle.
 constexpr int kFormatVersion = 2;
 
 // Kept equal to the legacy store limit so migration cannot silently drop entries the old code kept.
-constexpr size_t kMaxItems = 50;
+constexpr size_t kMaxItems = MsimeClipboardSync::kMaxItems;
 
 // Preserve the legacy 4000 UTF-16 code unit limit, including Chinese text and surrogate pairs.
-constexpr size_t kMaxTextUnits = 4000;
+constexpr size_t kMaxTextUnits = MsimeClipboardSync::kMaxTextUnits;
 constexpr size_t kMaxPayloadBytes = 2 * 1024 * 1024;
 
-struct Record
-{
-    std::string id;            // opaque, unique per entry; empty only in records parsed from v1
-    std::string text;          // UTF-8
-    std::string hash;          // lowercase hex SHA-256 of text; recomputed when absent
-    std::string origin_device; // device that first captured it; empty means "captured locally"
-    int64_t created_at = 0;    // unix seconds; 0 when unknown
-};
+using Record = MsimeClipboardSync::Record;
 
 struct ParseResult
 {

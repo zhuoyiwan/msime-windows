@@ -23,6 +23,8 @@ add_executable(portable_tests
     "${SERVER_ROOT}/tests/src/test_candidate_view_model.cpp"
     "${SERVER_ROOT}/tests/src/test_candidate_text_policy.cpp"
     "${SERVER_ROOT}/tests/src/test_clipboard_record.cpp"
+    "${SERVER_ROOT}/tests/src/test_clipboard_sync.cpp"
+    "${SERVER_ROOT}/src/sync/clipboard_receive_policy.cpp"
     "${SERVER_ROOT}/src/clipboard/clipboard_record.cpp"
     "${SERVER_ROOT}/src/webview2/skin_css_policy.cpp"
 )
@@ -51,8 +53,9 @@ if(WIN32)
         main.cpp clipboard_history_paths.cpp
         "${SERVER_ROOT}/tests/src/test_clipboard_history.cpp"
         "${SERVER_ROOT}/src/clipboard/clipboard_history.cpp"
+        "${SERVER_ROOT}/src/sync/clipboard_receive_policy.cpp"
         "${SERVER_ROOT}/src/clipboard/clipboard_record.cpp")
-    target_include_directories(clipboard_history_tests PRIVATE "${SERVER_ROOT}" "${SERVER_ROOT}/src")
+    target_include_directories(clipboard_history_tests PRIVATE "${SERVER_ROOT}" "${SERVER_ROOT}/src" "${SERVER_ROOT}/..")
     target_link_libraries(clipboard_history_tests PRIVATE user32)
     if(MSVC)
         target_compile_options(clipboard_history_tests PRIVATE /utf-8)

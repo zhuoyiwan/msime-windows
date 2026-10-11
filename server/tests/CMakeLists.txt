@@ -17,6 +17,8 @@ set(TEST_SOURCE_FILES
     "${CMAKE_SOURCE_DIR}/src/clipboard/clipboard_record.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_clipboard_record.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_clipboard_history.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/test_clipboard_sync.cpp"
+    "${CMAKE_SOURCE_DIR}/src/sync/clipboard_receive_policy.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_kaomoji_sql.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_shuangpin_scheme.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_custom_shuangpin.cpp"

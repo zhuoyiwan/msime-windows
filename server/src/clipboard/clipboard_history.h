@@ -1,6 +1,7 @@
 #pragma once
 
 #include "clipboard/clipboard_record.h"
+#include "sync/clipboard_receive_policy.h"
 
 #include <filesystem>
 #include <string>
@@ -8,11 +9,12 @@
 
 namespace ClipboardHistory
 {
-constexpr size_t kMaxItems = 50;
-constexpr size_t kMaxChars = 4000;
+constexpr size_t kMaxItems = MsimeClipboardSync::kMaxItems;
+constexpr size_t kMaxChars = MsimeClipboardSync::kMaxTextUnits;
 
 std::filesystem::path StorePath();
 std::vector<ClipboardRecord::Record> LoadRecords();
+ClipboardSync::ImportResult ImportRecord(const ClipboardRecord::Record &record, std::string_view authenticated_peer);
 std::vector<std::wstring> Load();
 bool AddText(std::wstring text);
 bool RemoveText(const std::wstring &text);

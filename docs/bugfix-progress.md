@@ -17,7 +17,7 @@ P0 的状态按代码证据记录；旧 issue 仍 open，不能据此断定当�
 | Issue | 当前代码证据 | 结论与下一步 |
 |---|---|---|
 | #701 设置一直转圈 | 5aed0fcb 增加 settings_app.cpp 的 ReportWebViewStartupFailure；覆盖环境和 controller 创建的同步/异步失败，关闭 splash 并给出修复链接 | WebView2 创建失败已有处理；反馈称 Runtime 已安装，仍需在原环境复测，尚不能宣布整个 issue 修好 |
-| #68 安装路径 / WebView2 缺失 | installer/msime_setup.iss 已有 AlwaysShowDirOnReadyPage=yes；Server 启动缺 Runtime 会回退 D2D；windows_webview2.cpp 失败后通过独立线程、无 owner 的提示框报告 | 路径与隐形错误提示已有处理；安装器 ReadWebView2Version 仍主要依赖注册表 pv，注册残留但文件缺失的检测仍待补齐 |
+| #68 安装路径 / WebView2 缺失 | 已有路径提示、D2D 回退和可见失败提示；本轮为 ReadWebView2Version 增加实际文件检查与跨视图/用户级回退 | 注册残留但文件缺失的检测缺口已修，并通过生产函数回归探针；完整安装包和原反馈机器仍待复测 |
 | #797 文件扫描/移动时卡顿 | 8f2c81dd 把选词学习写库移出按键线程；c280634c 启用词库 WAL | 有针对写库阻塞的改进，未做扫描压力复现；需区分 CPU/I/O 饱和、管道等待和选词学习延迟 |
 | #708 CS2 聊天输入卡死 | 反馈在候选显示前就卡死，不能直接归因 window_hook.cpp | 沿 windows/src/Key → IPC → edit session 检查等待；抓游戏宿主和 Server 的挂起堆栈后再改，保留 UILess 候选路径 |
 | #296 Win11 无中文/候选 | 反馈来自 v0.6.2 且信息不足；当前连接已有协议握手与失败回退 | 需当前安装包、宿主架构、初始输入模式和连接日志，暂未确认根因 |
@@ -50,7 +50,18 @@ ctest --test-dir server/tests/portable/build -C Release --output-on-failure
 
 已验证模型往返、Unicode 容量、异常输入、迁移 ID 稳定、增删清空、关闭采集，以及 Windows 文件共享锁阻止替换时保留旧内容。C++ 格式按 clang-format 18.1.8 检查。
 
-本机 Release 结果：portable_tests 的 65 个用例、clipboard_history_tests 的 6 个用例全部通过，合计 71 个，0 失败。
+首次改造 Release 结果为 71 个用例通过；本轮加入 LAN 数据处理后为 portable_tests 72 个、clipboard_history_tests 9 个，合计 81 个，0 失败。
+
+## 本轮继续：检测缺口与 LAN 数据处理
+
+- 安装器检查注册表版本及对应 msedgewebview2.exe 文件；残留键、无效版本或文件缺失继续查找其他机器级/用户级安装位置。
+- installer/tests/webview2-runtime.ps1 抽取生产 Pascal 函数，使用临时目录文件和模拟注册表读取运行探针，不改系统 WebView2。覆盖缺失文件、残留键、备用安装和无效版本。已登记 Windows CI。
+- 本机通过临时目录中解包的 Inno Setup 6.0.5 编译器运行这一纯 Pascal 探针；没有运行编译器安装程序。完整安装器要求 6.6+，CI 用 runner 自带的编译器验证同一探针，本轮未编译完整安装包。
+- 唯一事件定义在 engine/contracts/clipboard_sync.h；本地记录复用该类型与容量，编码/解码不依赖 Windows。明确验证长度、版本、UTF-8、记录身份及跨语言固定向量。
+- 新增 server/src/sync/clipboard_receive_policy.*，验证来源与已认证设备匹配、SHA-256 一致，拒绝冲突/反射/重复，按接收顺序保持最多 50 条。
+- ClipboardHistory::ImportRecord 已接入真实历史文件，保留远端元数据、尊重关闭采集、保持原子写入；损坏历史或写入失败不覆盖旧文件。
+- 只有新的本机采集记录可供后续发送；迁移来的旧历史和接收记录不会再广播。
+- 本轮没有启用网络监听。加密连接与设备配对仍是接入上述 API 的前置；传输层还需负责会话重放防护，历史去重不能替代它。
 
 完整 Server/安装包构建、真实游戏和旧反馈环境复测尚未执行；本机没有现成的 Server 构建树及完整依赖/词库。
 

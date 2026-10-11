@@ -2,6 +2,10 @@
 
 These headers are independently consumable C++17 contracts. Including them does not link the input engine, start threads, access dictionaries, or require any third-party code. The TSF text service consumes only these headers; the server consumes the same source by linking the engine. Both live in this repository — `windows/` and `server/` — and so does the engine, so one commit covers all three and there is no pin to keep in step.
 
+clipboard_sync.h owns clipboard event records, bounds and byte framing. See
+[clipboard_sync.md](clipboard_sync.md) for the v1 golden vector and the required authenticated,
+encrypted transport boundary. It does not start a LAN listener or implement device pairing.
+
 `windows_ipc.h` owns the wire layouts, pipe names and opcodes. `voice_composition_pipe.h` owns voice framing. Consumers may wrap these headers but must not duplicate their definitions.
 
 `punctuation/policy.json` is the source of truth for the ASCII punctuation keys and their Chinese
