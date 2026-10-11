@@ -102,6 +102,11 @@ jobs:
         shell: pwsh
         run: ./scripts/ci/check-inno-language.ps1
 
+      - name: Test WebView2 runtime detection
+        if: ${{ matrix.name == 'x64' }}
+        shell: pwsh
+        run: ./installer/tests/webview2-runtime.ps1
+
   # MSIME-Linux's ci.yml already reasons about this: "the frontend layer had none -- and that is the
   # layer that parses untrusted input", after an audit of the Windows frontend turned up a batch of
   # races and null dereferences that the Debug build did not catch. Linux acted on that; this

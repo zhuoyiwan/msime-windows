@@ -226,21 +226,71 @@ var
   Server 启动时会临时退回 D2D）。故障现场都在安装结束之后，用户看不到任何解释，
   所以在安装开始前查一遍，把原因当场说清楚。
 
-  返回空串表示没装；否则是 pv 里的版本号。}
-function ReadWebView2Version: String;
+  注册表 pv 可能在卸载后残留；必须同时找到对应版本的运行时文件。
+  返回空串表示没装或安装不完整。}
+function IsWebView2Version(const Version: String): Boolean;
+var
+  I, Dots, Digits: Integer;
+begin
+  Result := False;
+  if (Length(Version) = 0) or (Length(Version) > 64) or (Version = '0.0.0.0') then
+    Exit;
+  Dots := 0;
+  Digits := 0;
+  for I := 1 to Length(Version) do
+  begin
+    if Version[I] = '.' then
+    begin
+      if Digits = 0 then Exit;
+      Dots := Dots + 1;
+      Digits := 0;
+    end
+    else if (Version[I] >= '0') and (Version[I] <= '9') then
+      Digits := Digits + 1
+    else
+      Exit;
+  end;
+  Result := (Dots = 3) and (Digits > 0);
+end;
+
+function WebView2VersionAt(RootKey: Integer; const InstallRoot: String): String;
+var
+  Version: String;
 begin
   Result := '';
+  if not RegQueryStringValue(RootKey, WebView2ClientKey, 'pv', Version) then Exit;
+  Version := Trim(Version);
+  if not IsWebView2Version(Version) then Exit;
+  if FileExists(AddBackslash(InstallRoot) + Version + '\msedgewebview2.exe') then
+    Result := Version
+  else
+    Log('WebView2 registration found but runtime file missing: ' + InstallRoot + '\' + Version);
+end;
+
+function ReadWebView2Version: String;
+var
+  MachineRoot, NativeMachineRoot, UserRoot: String;
+begin
   { 机器级安装由 32 位的 EdgeUpdate 写入，键落在 WOW6432Node 下。本安装器跑在
     64 位模式，HKLM 默认就是 64 位视图，所以主查 HKLM32；HKLM64 作为后备，
     以防将来的 ARM64 / 原生 64 位布局换了位置。用户级安装写在 HKCU。
     卸载没清干净的机器上 pv 可能残留成 0.0.0.0。}
-  if not RegQueryStringValue(HKLM32, WebView2ClientKey, 'pv', Result) then
-    if not RegQueryStringValue(HKLM64, WebView2ClientKey, 'pv', Result) then
-      if not RegQueryStringValue(HKCU, WebView2ClientKey, 'pv', Result) then
-        Result := '';
-  Result := Trim(Result);
-  if Result = '0.0.0.0' then
-    Result := '';
+  MachineRoot := ExpandConstant('{pf32}\Microsoft\EdgeWebView\Application');
+  UserRoot := ExpandConstant('{localappdata}\Microsoft\EdgeWebView\Application');
+  Result := WebView2VersionAt(HKLM32, MachineRoot);
+  if Result <> '' then Exit;
+  Result := WebView2VersionAt(HKLM64, MachineRoot);
+  if Result <> '' then Exit;
+  if IsWin64 then
+  begin
+    NativeMachineRoot := ExpandConstant('{pf64}\Microsoft\EdgeWebView\Application');
+    Result := WebView2VersionAt(HKLM32, NativeMachineRoot);
+    if Result <> '' then Exit;
+    Result := WebView2VersionAt(HKLM64, NativeMachineRoot);
+    if Result <> '' then Exit;
+  end;
+  { 一个机器级键残留不应阻断另一个视图或有效的用户级安装。}
+  Result := WebView2VersionAt(HKCU, UserRoot);
 end;
 
 // 用注册表判定，而不是去 System32 里找 vcruntime140.dll：Setup.exe 是 32 位进程，
