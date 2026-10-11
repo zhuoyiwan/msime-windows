@@ -1,93 +1,162 @@
 # 多设备剪贴板共享 · 方案说明与决策
 
 - 关联：`docs/issues-grading.md`（分级 v2）、上游 issue #678 / #712 / #811 / #798
-- 本文件回答三个决策问题，并记录结论
+- 本文件记录决策，并给出 v1 局域网方案的具体设计
 
 ## 0. 决策状态
 
 | # | 问题 | 结论 |
 |---|---|---|
-| 1 | Android 路线 | **已定：路线 A** —— 在 `msime` 仓（Rust/TS）推进 Android 宿主 |
-| 2 | 传输方案 | 待定 → 建议「局域网直连 + WebDAV」双通道（全免费） |
-| 3 | 同步范围 | 待定 → 建议第一版只做剪贴板 |
-| 4 | E1（engine 去 Windows 化） | **因走路线 A，本仓不再需要** |
+| 1 | Android 路线 | **A**：在 `msime` 仓（Rust/TS）推进 Android 宿主 |
+| 2 | 传输方案 | **已定：v1 只做局域网直连** —— 不用 WebDAV、不用服务器、不用 Cloudflare |
+| 3 | 同步范围 | 建议 v1 仅 L1 剪贴板（见 §1 的四层释义） |
+| 4 | E1（engine 去 Windows 化） | 因走路线 A，**本仓不再需要** |
 
-## 1. 「同步范围」释义
-
-要在设备之间同步的「东西」共四层：
+## 1. 同步范围释义（四层）
 
 | 层 | 内容 | 落盘位置 | 同步难度 |
 |---|---|---|---|
-| L1 剪贴板历史 | 用户复制的文本 | `server/src/clipboard/clipboard_history.*` | 低 |
-| L2 用户词库 / 学习记录 | 被记住的词、调频、固定候选位 | `msime_user.db`、`user_data/dictionaries/<content ID>/{msime.db,english.db}` | **高**（两设备各自学习 → 双向合并冲突） |
-| L3 配置 | 设置页全部选项 | 用户 `config.toml`（出厂模板 `installer/default_config/config.default.toml`） | 中（字段多，含机器相关项） |
+| L1 剪贴板历史 | 用户复制的文本 | `<IME 数据目录>/clipboard_history.json` | 低 |
+| L2 用户词库 / 学习记录 | 被记住的词、调频、固定候选位 | `msime_user.db`、`user_data/dictionaries/<content ID>/{msime.db,english.db}` | **高**（双向合并冲突） |
+| L3 配置 | 设置页全部选项 | 用户 `config.toml` | 中（含机器相关项） |
 | L4 快捷短语 | 自定义短语 | 用户数据 | 低-中 |
 
-上游 #678 的原话是「多设备使用时数据不互通，配置参数、用户词库等手动处理麻烦」——即用户要的是 **L2 + L3**，不只是 L1。
+上游 #678 的原话是「配置参数、用户词库等手动处理麻烦」，即用户想要的是 **L2 + L3**。本方案 v1 只做 **L1**，L2/L3/L4 留到后续。
 
-### 硬约束（已核实）
+### L3 的硬约束（已核实）
 
-`server/src/config/credential_protection.h` 明确：`config.toml` 里的凭证以 **DPAPI（当前用户范围）** 密文落盘，「只有同一个 Windows 账户能解开」。因此：
+`server/src/config/credential_protection.h` 明确：`config.toml` 里的凭证以 **DPAPI（当前用户范围）** 密文落盘，「只有同一个 Windows 账户能解开」。因此凭证密文**无法跨设备同步**，将来做 L3 时必须排除凭证键或另设同步密钥。
 
-- 凭证密文**无法跨设备同步**（换机器解不开）；
-- 同步 L3 时必须排除凭证键，或为同步单独设计一套密钥。
+## 2. 现有实现（只读定位结果，均已核实）
 
-### 建议
+### 2.1 存储
 
-第一版只做 **L1 剪贴板**（即目标③本身）；L2 / L3 / L4 留到第二版。理由：L2 的合并冲突（两台设备各自学过词、各自调过频）复杂度比 L1 高一个量级。
+| 项 | 事实 |
+|---|---|
+| 落盘文件 | `<IME 数据目录>/clipboard_history.json`（`ClipboardHistory::StorePath()`，`clipboard_history.cpp:520`） |
+| 格式 | JSON 字符串数组，UTF-8 |
+| 上限 | 50 条 / 每条 4000 字符（`kMaxItems` / `kMaxChars`） |
+| 写入 | `std::ofstream` + `trunc`，**非原子**（无 temp + rename），`clipboard_history.cpp:280` |
+| 并发保护 | 命名互斥体 `Local\MetasequoiaIme.ClipboardHistory` |
+| 开关 | `config.toml` 的 `[utility] clipboard_history`，互斥体 `Local\MetasequoiaIme.ConfigFile` |
 
-## 2. 传输方案对比（含免费选项）
+### 2.2 采集
+
+- 消息专用窗口 `MetasequoiaIme.ClipboardListener` + `AddClipboardFormatListener` + `GetClipboardSequenceNumber`
+- 定时器去抖 80ms（`kCaptureDebounceMs`）
+- `ClipboardMonitor::{Start,Stop,Sync,IsRunning}` 跑独立线程
+
+### 2.3 消费者
+
+| 位置 | 用途 |
+|---|---|
+| `server/src/emoji-panel/EmojiPanel.cpp` | 剪贴板面板（**目前嵌在 emoji 面板里**，正对应 issue #811 的诉求） |
+| `server/src/config/ime_config_general.cpp:522` | 开关变更时清空 |
+| `server/src/config/ime_config.cpp:594` | 启动时同步状态 |
+| `server/src/main.cpp:211` | 退出时停止监听 |
+
+### 2.4 结论：要同步必须先改数据模型
+
+现有条目**只有文本本身**，没有 id / 时间戳 / 来源设备 / 哈希，无法做去重与冲突判定。
+
+## 3. v1 局域网方案设计
+
+### 3.1 总体结构
+
+```
+[Windows：server 进程]                    [Android：msime 仓]
+   ClipboardMonitor（采集）                  ClipboardService（采集）
+          │                                        │
+          └────────► LAN Sync 模块 ◄───────────────┘
+                  发现 / 配对 / 加密 / 传输
+```
+
+无服务器、无域名、无证书、无云端。
+
+### 3.2 发现（Discovery）
+
+| 方案 | 说明 |
+|---|---|
+| mDNS / DNS-SD（首选） | Windows 10 1703+ 有原生 API（`windns.h` 的 `DnsServiceRegister` / `DnsServiceBrowse`）；Android 用 `NsdManager` |
+| UDP 组播（兜底） | 固定组播地址 + 端口，兼容不支持 mDNS 的环境 |
+| 手动填 IP（最后兜底） | 应对 AP 隔离 |
+
+### 3.3 配对与加密
+
+- 首次配对：两端显示 / 输入同一 PIN → SPAKE2 或 PIN + X25519 ECDH → 派生长期密钥
+- 传输加密：AES-GCM 或 ChaCha20-Poly1305
+- **局域网同样必须加密**：公共 WiFi / 公司网络同网段可能有其他人
+
+### 3.4 传输
+
+- TCP（简单可靠）或 QUIC；端口固定
+- 安装器需添加防火墙入站规则（Windows 默认拦截入站）
+
+### 3.5 数据模型（新）
+
+由纯字符串数组升级为带元数据的记录，并保留旧格式迁移：
+
+```json
+{
+  "version": 2,
+  "items": [
+    {
+      "id": "uuid",
+      "text": "...",
+      "hash": "sha256",
+      "origin_device": "device-uuid",
+      "created_at": 1699999999
+    }
+  ]
+}
+```
+
+- 读到 v1 的纯数组时自动迁移
+- `hash` 用于去重；`origin_device` 用于防止回环广播
+- 同步写入本地历史的条目**不再触发对外广播**，也不自动改写系统剪贴板（仅在面板中出现）
+
+### 3.6 代码落点
+
+| 任务 | 位置 |
+|---|---|
+| 数据模型改造 + v1 迁移 | `server/src/clipboard/clipboard_history.{h,cpp}` |
+| 写入原子化（temp + rename） | 同上（引入网络写入后必须做） |
+| LAN 同步模块（发现 / 配对 / 加密 / 传输） | 新增 `server/src/sync/` |
+| 设备列表与配对 UI | `ui-html/webview2/settings/` |
+| 剪贴板面板 | `server/src/emoji-panel/EmojiPanel.cpp`（可参照 #811 独立出来） |
+| 防火墙规则 | `installer/` |
+| Android 端 | `msime` 仓 |
+
+## 4. 已知限制（局域网方案的真实代价）
+
+1. **AP 隔离**：多数公共 / 访客 WiFi 禁止设备互访，发现与连接都会失败，需手动 IP 兜底。
+2. **跨网段**：2.4G 与 5G 访客网络若互相隔离，组播可能不通。
+3. **Windows 防火墙**：默认拦截入站，安装器不加规则用户会直接看到连接失败。
+4. **离开同一网络即不可用** —— 这是 v1 的主动取舍，不是缺陷。
+5. **写入非原子**：现有 `trunc` 写入在并发下可能损坏文件，加网络写入前建议先改为 temp + rename。
+
+## 5. 后续（不在 v1 范围）
+
+- 跨网络：WebDAV，或自建服务器（`msime-cloud`）+ Cloudflare Tunnel 入口
+- L2 词库 / L3 配置 / L4 快捷短语同步（L3 必须排除 DPAPI 加密的凭证）
+- 统计同步（#798）
+
+## 6. 下一步
+
+1. 数据模型改造 + v1 迁移 + 写入原子化
+2. LAN 发现 + 配对 + 加密 + 传输
+3. 设置页设备管理 UI
+4. Android 侧对接（`msime` 仓）
+
+## 附录 A：传输方案对比（备查，说明为何选局域网）
 
 | 方案 | 需要服务器 | 费用 | 跨网络 | 实时性 | 实现成本 | 主要缺点 |
 |---|---|---|---|---|---|---|
-| **局域网直连**（mDNS + TCP/QUIC） | 否 | **完全免费** | 否（同网段） | 高 | 中 | 离开同一网络即断 |
-| **WebDAV**（用户自带网盘） | 否 | **免费额度可用** | 是 | 低（轮询） | 低 | 依赖第三方 |
-| 自建 `msime-cloud` 中转 | 是 | **服务器要花钱** | 是 | 高（WebSocket） | 高 | 运维 + 账号体系 |
-| Tailscale / WireGuard 组网 | 否 | 个人免费 | 是 | 高 | 中 | 用户需装额外客户端 |
-| **Syncthing** | 否 | **完全免费开源** | 是 | 中 | **极低** | 体验割裂，依赖用户自装 |
-| 系统云剪贴板 | 否 | 免费 | 是 | 高 | — | **Android 无对等开放 API，不可用** |
-| 对象存储（R2 / Gist） | 否 | 免费额度 | 是 | 低 | 低 | 需轮询，无实时 |
-
-### 免费额度参考（以各官方为准）
-
-- 坚果云：免费版支持 WebDAV，每月上传流量 1GB（剪贴板文本量级足够）
-- InfiniCLOUD：免费 20GB，支持 WebDAV
-- 自建 Nextcloud：软件免费，需自有服务器 / NAS
-- Tailscale：个人免费版最多 100 台设备
-- Cloudflare R2：免费 10GB 存储
-- Syncthing：完全免费开源，无额度限制
-
-### 推荐组合（全免费）
-
-1. **主通道：局域网直连** —— 零成本、最快、隐私最好、离线可用
-2. **备通道：WebDAV** —— 跨网络场景，用户填自己的网盘
-3. **兜底：兼容 Syncthing 同步目录** —— 零开发量，把文本文件放进同步目录即可
-
-唯一需要付费的是自建 `msime-cloud`（服务器 + 运维 + 账号体系）。选择「局域网 + WebDAV」则**不需要写任何服务端代码**。
-
-### 无论选哪条通道都必须做
-
-- **端到端加密**：配对后派生密钥（如 X25519 ECDH + AES-GCM），服务端 / 网盘只见密文
-- **设备配对与授权**：新设备加入需已有设备确认
-- **按设备开关**：可单独关闭某台设备的同步
-- **敏感过滤**：密码管理器类剪贴板内容默认不同步
-
-## 3. 架构落点（因路线 A 调整）
-
-Android 走 `msime` 仓（Rust/TS），Windows 在本仓（C++）。同步协议必须**只定义一次**，两侧各自实现：
-
-| 层 | 落点 |
-|---|---|
-| 协议定义 | `msime-cloud` 的 OpenAPI / Swagger，或 `msime/shared/contracts` |
-| 服务端（仅中转方案需要） | `msime-cloud`（Go） |
-| Windows 客户端 | 本仓 `server/src/cloud/` 或新增 `server/src/sync/` |
-| Android 客户端 | `msime` 仓 |
-| 数据模型改造 | 本仓 `server/src/clipboard/clipboard_history.*`（条目加 id / 时间戳 / 来源设备 / 哈希） |
-
-> 若选「局域网直连 + WebDAV」，不需要服务端，协议只需两端约定格式，实现量大幅下降。
-
-## 4. 下一步
-
-1. 定传输方案（建议：局域网直连 + WebDAV）
-2. 定范围（建议：第一版仅剪贴板 L1）
-3. 本仓可先做只读定位：读 `clipboard_history.cpp` 的存储格式与 `ClipboardMonitor` 触发路径，产出可同步的数据模型设计
+| **局域网直连（已选）** | 否 | **完全免费** | 否 | 高 | 中 | 离开同一网络即断 |
+| WebDAV（用户自带网盘） | 否 | 免费额度可用 | 是 | 低（轮询） | 低 | 依赖第三方 |
+| 自建 `msime-cloud` 中转 | 是 | 服务器要花钱 | 是 | 高 | 高 | 运维 + 账号体系 |
+| Cloudflare Workers + Durable Objects | 否 | 免费额度（10 万请求/天、DO 13,000 GB-s/天；Free 计划 DO 仅 SQLite 后端） | 是 | 高 | 中 | `workers.dev` 在中国大陆常不可达，须绑自定义域名 |
+| Cloudflare Tunnel | 否（入口） | 免费 | 是 | 高 | 低 | 仍依赖自有服务器 |
+| Tailscale / WireGuard | 否 | 个人免费 | 是 | 高 | 中 | 用户需装额外客户端 |
+| Syncthing | 否 | 完全免费开源 | 是 | 中 | 极低 | 体验割裂，依赖用户自装 |
+| 系统云剪贴板 | 否 | 免费 | 是 | 高 | — | Android 无对等开放 API，不可用 |
