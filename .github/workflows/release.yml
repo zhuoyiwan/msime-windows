@@ -622,7 +622,7 @@ jobs:
           --output installer/app_data/product-manifest.json
 
       # Every payload EXE/DLL, not just the uiAccess server. The server is the only one that
-      # technically requires a signature (uiAccess=true is ignored without one), but Microsoft
+      # requests uiAccess and requires a signature to launch with it, but Microsoft
       # Defender blocks the unsigned helper processes -- settings page, emoji panel, watchdog --
       # and the user sees an input method that installs and then cannot open its own panels.
       - name: Sign the payload binaries
@@ -679,7 +679,9 @@ jobs:
       - name: Compile the installer
         shell: pwsh
         working-directory: installer
-        run: pwsh -File ./Compile-Installer.ps1
+        env:
+          SIGNING_ENABLED: ${{ steps.signing.outputs.signing_enabled }}
+        run: ./Compile-Installer.ps1 -Unsigned:($env:SIGNING_ENABLED -eq 'false')
 
       - name: Sign the installer
         if: ${{ steps.signing.outputs.signing_provider == 'certificate' }}

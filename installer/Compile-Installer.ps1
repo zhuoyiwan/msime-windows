@@ -2,7 +2,8 @@
 param(
     [string]$IsccPath,
     [string]$IssPath = (Join-Path $PSScriptRoot 'msime_setup.iss'),
-    [switch]$Light
+    [switch]$Light,
+    [switch]$Unsigned
 )
 
 $ErrorActionPreference = 'Stop'
@@ -76,6 +77,14 @@ if (-not (Test-Path -LiteralPath $IssPath -PathType Leaf)) {
 
 $resolvedIssPath = (Resolve-Path -LiteralPath $IssPath).Path
 $resolvedIsccPath = Resolve-IsccPath -ExplicitPath $IsccPath
+
+$stagedServer = Join-Path $PSScriptRoot 'server_exe/MetasequoiaImeServer.exe'
+$serverIsUnsigned = (Test-Path -LiteralPath $stagedServer -PathType Leaf) -and
+    (Get-AuthenticodeSignature -LiteralPath $stagedServer).Status -eq 'NotSigned'
+if ($Unsigned -or $serverIsUnsigned) {
+    & (Join-Path $PSScriptRoot '../scripts/ci/embed-server-manifest.ps1') `
+        -BuildDir 'installer/server_exe' -UiAccess false
+}
 
 Write-Host "Inno Setup 编译器：$resolvedIsccPath"
 Write-Host "安装脚本：$resolvedIssPath"

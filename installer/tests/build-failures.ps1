@@ -69,6 +69,43 @@ try {
     if ($global:MsimeManifestArguments.Count -ne 2 -or $global:MsimeManifestArguments[0] -ne $expectedInputResource) {
         throw 'CI manifest embedding did not verify resource 1'
     }
+    # Unsigned payloads must actually write false, validate the readback, and leave
+    # the signed-build source manifest untouched. No real executable is modified.
+    function global:Get-AuthenticodeSignature { [pscustomobject]@{ Status = $global:MsimeSignatureStatus } }
+    $global:MsimeSignatureStatus = 'NotSigned'
+    $global:MsimeReadbackUiAccess = 'false'
+    $global:MsimeEmbeddedManifest = ''
+    function global:Invoke-MsimeManifestProbe {
+        $global:LASTEXITCODE = 0
+        if ($args[0] -eq '-manifest') {
+            $global:MsimeEmbeddedManifest = [IO.File]::ReadAllText($args[1])
+        } else {
+            $outPath = ($args[1] -replace '^-out:', '')
+            [IO.File]::WriteAllText($outPath, "<assembly><requestedExecutionLevel uiAccess=`"$global:MsimeReadbackUiAccess`" /></assembly>")
+        }
+    }
+    & (Join-Path $ciScripts 'embed-server-manifest.ps1') -BuildDir 'server/build-release/bin/Release' `
+        -ManifestTool Invoke-MsimeManifestProbe -UiAccess false
+    if ($global:MsimeEmbeddedManifest -notmatch 'uiAccess="false"' -or
+        [IO.File]::ReadAllText($releaseManifest) -notmatch 'uiAccess="true"') {
+        throw 'Unsigned staging did not disable uiAccess while preserving the source manifest'
+    }
+    $global:MsimeReadbackUiAccess = 'true'
+    $rejected = $false
+    try {
+        & (Join-Path $ciScripts 'embed-server-manifest.ps1') -BuildDir 'server/build-release/bin/Release' `
+            -ManifestTool Invoke-MsimeManifestProbe -UiAccess false
+    } catch { $rejected = $_.Exception.Message -eq 'Embedded Server manifest does not match uiAccess=false.' }
+    if (-not $rejected) { throw 'Unsigned staging accepted a manifest that still requests uiAccess' }
+    $global:MsimeSignatureStatus = 'Valid'
+    $global:MsimeEmbeddedManifest = ''
+    $rejected = $false
+    try {
+        & (Join-Path $ciScripts 'embed-server-manifest.ps1') -BuildDir 'server/build-release/bin/Release' `
+            -ManifestTool Invoke-MsimeManifestProbe -UiAccess false
+    } catch { $rejected = $_.Exception.Message -eq 'Refusing to change a signed Server binary for an unsigned package.' }
+    if (-not $rejected -or $global:MsimeEmbeddedManifest) { throw 'Unsigned staging tried to modify signed bytes' }
+    Remove-Item Function:/Get-AuthenticodeSignature
     Remove-Item Function:/cmake
     # Each installer entry must stop before staging/signing when the settings build fails.
     foreach ($relative in @('windows/scripts/lcompile-release-both.ps1', 'server/scripts/lcompile-release.ps1')) {
@@ -97,7 +134,8 @@ try {
     Write-Host 'Configure/build failures stop local packaging before staging, signing or installation'
 } finally {
     Set-Location $originalLocation
-    Remove-Item Function:/cmake, Function:/pnpm, Function:/Invoke-MsimeManifestProbe -ErrorAction SilentlyContinue
+    Remove-Item Function:/cmake, Function:/pnpm, Function:/Invoke-MsimeManifestProbe, Function:/Get-AuthenticodeSignature -ErrorAction SilentlyContinue
     Remove-Variable MsimeBuildCalls, MsimeFailAt, MsimeManifestExit, MsimeManifestArguments -Scope Global -ErrorAction SilentlyContinue
+    Remove-Variable MsimeSignatureStatus, MsimeReadbackUiAccess, MsimeEmbeddedManifest -Scope Global -ErrorAction SilentlyContinue
     if (Test-Path $fixture) { Remove-Item $fixture -Recurse -Force }
 }

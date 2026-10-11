@@ -68,7 +68,9 @@ TSF DLL 被加载进宿主程序进程，采用静态 CRT 构建，不依赖运�
 
 ### 候选窗始终不出现
 
-先确认已安装 **Microsoft Edge WebView2 Runtime**（在「设置 → 应用 → 已安装的应用」里搜索 WebView2）。当前版本的候选窗由 WebView2 渲染，运行时缺失会导致窗口无法显示。
+先在任务管理器中确认 `MetasequoiaImeServer.exe` 正在运行。若英文能输入、中文没有候选，且手动启动 Server 报“从服务器返回了一个参照”，可能是旧未签名测试包错误地请求了 `uiAccess=true`，需要覆盖安装修正后的包。未签名包应使用 `uiAccess=false`，能在普通桌面应用中运行，但无法向管理员权限的应用提供候选浮层。
+
+Server 正常运行后，如果使用 WebView2 候选窗，再确认已安装 **Microsoft Edge WebView2 Runtime**（在“设置 → 应用 → 已安装的应用”里搜索 WebView2）。默认的 D2D 候选窗不依赖 WebView2，运行时缺失时 Server 会临时回退到 D2D。
 
 ### 手写识别没有候选结果
 

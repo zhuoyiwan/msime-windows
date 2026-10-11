@@ -1,6 +1,8 @@
 # Decide whether this release can be signed, and say so in the log either way.
 #
-# Signing is optional so the pipeline stays runnable without a certificate, but an unsigned build is degraded in a way users will notice: per AGENTS.md, uiAccess="true" only takes effect for a correctly signed binary installed somewhere Windows trusts, so the candidate window cannot float over elevated hosts. Unsigned artifacts therefore carry a suffix and the release notes say so.
+# Signing is optional. Compile-Installer disables uiAccess in unsigned payloads because
+# Windows otherwise refuses to launch the Server. Such builds cannot float over elevated
+# hosts, carry an unsigned suffix, and disclose the limitation in the release notes.
 #
 # SignPath is opt-in through the WINDOWS_SIGNING_PROVIDER repository variable. Unset, the certificate path below is the one that runs. Set to signpath, the SignPath settings must all be present: a half-configured SignPath fails the release instead of quietly falling back to the certificate or to an unsigned build.
 #
