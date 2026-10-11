@@ -1,5 +1,7 @@
 #pragma once
 
+#include "clipboard/clipboard_record.h"
+
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -10,6 +12,7 @@ constexpr size_t kMaxItems = 50;
 constexpr size_t kMaxChars = 4000;
 
 std::filesystem::path StorePath();
+std::vector<ClipboardRecord::Record> LoadRecords();
 std::vector<std::wstring> Load();
 bool AddText(std::wstring text);
 bool RemoveText(const std::wstring &text);

@@ -22,6 +22,8 @@ add_executable(portable_tests
     "${SERVER_ROOT}/tests/src/test_input_key_policy.cpp"
     "${SERVER_ROOT}/tests/src/test_candidate_view_model.cpp"
     "${SERVER_ROOT}/tests/src/test_candidate_text_policy.cpp"
+    "${SERVER_ROOT}/tests/src/test_clipboard_record.cpp"
+    "${SERVER_ROOT}/src/clipboard/clipboard_record.cpp"
     "${SERVER_ROOT}/src/webview2/skin_css_policy.cpp"
 )
 
@@ -42,3 +44,18 @@ endif()
 
 include(CTest)
 add_test(NAME portable_tests COMMAND portable_tests)
+
+# Run the real Windows history read/write path without dictionaries, Boost or WebView2.
+if(WIN32)
+    add_executable(clipboard_history_tests
+        main.cpp clipboard_history_paths.cpp
+        "${SERVER_ROOT}/tests/src/test_clipboard_history.cpp"
+        "${SERVER_ROOT}/src/clipboard/clipboard_history.cpp"
+        "${SERVER_ROOT}/src/clipboard/clipboard_record.cpp")
+    target_include_directories(clipboard_history_tests PRIVATE "${SERVER_ROOT}" "${SERVER_ROOT}/src")
+    target_link_libraries(clipboard_history_tests PRIVATE user32)
+    if(MSVC)
+        target_compile_options(clipboard_history_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME clipboard_history_tests COMMAND clipboard_history_tests)
+endif()

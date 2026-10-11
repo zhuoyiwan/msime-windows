@@ -1,4 +1,5 @@
 #include "clipboard/clipboard_history.h"
+#include "clipboard/clipboard_record.h"
 #include "utils/common_utils.h"
 
 #include <Windows.h>
@@ -6,6 +7,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <chrono>
 #include <cstdio>
 #include <fstream>
 #include <mutex>
@@ -114,182 +116,52 @@ bool ParseBoolToken(std::string value)
     return value == "true" || value == "1" || value == "yes" || value == "on";
 }
 
-std::string JsonEscape(const std::string &text)
-{
-    std::string out;
-    out.reserve(text.size() + 8);
-    for (unsigned char ch : text)
-    {
-        switch (ch)
-        {
-        case '\\':
-            out += "\\\\";
-            break;
-        case '"':
-            out += "\\\"";
-            break;
-        case '\n':
-            out += "\\n";
-            break;
-        case '\r':
-            out += "\\r";
-            break;
-        case '\t':
-            out += "\\t";
-            break;
-        default:
-            if (ch < 0x20)
-            {
-                char buf[8];
-                sprintf_s(buf, "\\u%04x", ch);
-                out += buf;
-            }
-            else
-            {
-                out.push_back(static_cast<char>(ch));
-            }
-            break;
-        }
-    }
-    return out;
-}
-
-bool HexValue(char ch, int &value)
-{
-    if (ch >= '0' && ch <= '9')
-    {
-        value = ch - '0';
-        return true;
-    }
-    if (ch >= 'a' && ch <= 'f')
-    {
-        value = ch - 'a' + 10;
-        return true;
-    }
-    if (ch >= 'A' && ch <= 'F')
-    {
-        value = ch - 'A' + 10;
-        return true;
-    }
-    return false;
-}
-
-bool ParseJsonString(const std::string &text, size_t &index, std::string &value)
-{
-    if (index >= text.size() || text[index] != '"')
-        return false;
-    ++index;
-    value.clear();
-    while (index < text.size())
-    {
-        const char ch = text[index++];
-        if (ch == '"')
-            return true;
-        if (ch != '\\')
-        {
-            value.push_back(ch);
-            continue;
-        }
-        if (index >= text.size())
-            return false;
-        const char escaped = text[index++];
-        switch (escaped)
-        {
-        case '"':
-        case '\\':
-        case '/':
-            value.push_back(escaped);
-            break;
-        case 'n':
-            value.push_back('\n');
-            break;
-        case 'r':
-            value.push_back('\r');
-            break;
-        case 't':
-            value.push_back('\t');
-            break;
-        case 'u': {
-            if (index + 4 > text.size())
-                return false;
-            int code = 0;
-            for (int i = 0; i < 4; ++i)
-            {
-                int digit = 0;
-                if (!HexValue(text[index++], digit))
-                    return false;
-                code = (code << 4) | digit;
-            }
-            if (code < 0x80)
-                value.push_back(static_cast<char>(code));
-            else
-                value += WideToUtf8(std::wstring(1, static_cast<wchar_t>(code)));
-            break;
-        }
-        default:
-            return false;
-        }
-    }
-    return false;
-}
-
-std::vector<std::wstring> ParseJsonArray(const std::string &text)
-{
-    std::vector<std::wstring> items;
-    size_t index = 0;
-    while (index < text.size() && std::isspace(static_cast<unsigned char>(text[index])))
-        ++index;
-    if (index >= text.size() || text[index] != '[')
-        return items;
-    ++index;
-    while (index < text.size())
-    {
-        while (index < text.size() && std::isspace(static_cast<unsigned char>(text[index])))
-            ++index;
-        if (index < text.size() && text[index] == ']')
-            break;
-        std::string utf8;
-        if (!ParseJsonString(text, index, utf8))
-            break;
-        auto wide = Utf8ToWide(utf8);
-        if (!wide.empty())
-            items.push_back(std::move(wide));
-        while (index < text.size() && std::isspace(static_cast<unsigned char>(text[index])))
-            ++index;
-        if (index < text.size() && text[index] == ',')
-            ++index;
-    }
-    return items;
-}
-
-std::string SerializeJsonArray(const std::vector<std::wstring> &items)
-{
-    std::ostringstream out;
-    out << "[\n";
-    for (size_t i = 0; i < items.size(); ++i)
-    {
-        out << "  \"" << JsonEscape(WideToUtf8(items[i])) << '"';
-        if (i + 1 < items.size())
-            out << ',';
-        out << '\n';
-    }
-    out << "]\n";
-    return out.str();
-}
-
-bool WriteStoreUnlocked(const std::vector<std::wstring> &items)
+// Called with the store mutex held. A malformed/newer store must never be replaced by an
+// empty history just because a capture or deletion arrived.
+bool ReadStoreUnlocked(ClipboardRecord::ParseResult &store)
 {
     const auto path = ClipboardHistory::StorePath();
     if (path.empty())
         return false;
     std::error_code error;
-    std::filesystem::create_directories(path.parent_path(), error);
-    std::ofstream output(path, std::ios::binary | std::ios::trunc);
-    if (!output)
+    const bool exists = std::filesystem::exists(path, error);
+    if (error)
         return false;
-    const std::string payload = SerializeJsonArray(items);
-    output.write(payload.data(), static_cast<std::streamsize>(payload.size()));
-    return static_cast<bool>(output);
+    if (exists)
+    {
+        std::ifstream input(path, std::ios::binary | std::ios::ate);
+        if (!input)
+            return false;
+        const auto size = input.tellg();
+        if (size < 0 || size > static_cast<std::streamoff>(ClipboardRecord::kMaxPayloadBytes))
+            return false;
+        std::string payload(static_cast<size_t>(size), '\0');
+        input.seekg(0);
+        if (!input.read(payload.data(), static_cast<std::streamsize>(payload.size())))
+            return false;
+        store = ClipboardRecord::Parse(payload);
+        if (!store.error.empty())
+            return false;
+        store.migrated_from_v1 = store.migrated_from_v1 || store.repaired;
+    }
+    if (store.device_id.empty())
+    {
+        store.device_id = ClipboardRecord::GenerateId();
+        store.migrated_from_v1 = true; // persist the identity on the next load/write
+    }
+    if (store.migrated_from_v1)
+    {
+        for (auto &record : store.records)
+            if (record.origin_device.empty())
+                record.origin_device = store.device_id;
+    }
+    return true;
+}
+
+bool WriteStoreUnlocked(const ClipboardRecord::ParseResult &store)
+{
+    return ClipboardRecord::WriteFileAtomic(ClipboardHistory::StorePath(),
+                                            ClipboardRecord::Serialize(store.records, store.device_id));
 }
 
 std::wstring NormalizeClipboardText(std::wstring text)
@@ -525,21 +397,23 @@ std::filesystem::path ClipboardHistory::StorePath()
     return dir / L"clipboard_history.json";
 }
 
-std::vector<std::wstring> ClipboardHistory::Load()
+std::vector<ClipboardRecord::Record> ClipboardHistory::LoadRecords()
 {
     NamedMutex lock(kStoreMutexName);
-    if (!lock)
+    ClipboardRecord::ParseResult store;
+    if (!lock || !ReadStoreUnlocked(store))
         return {};
-    const auto path = StorePath();
-    if (path.empty())
+    // Publish migration under the same mutex, so repeated loads and other processes reuse IDs.
+    if (store.migrated_from_v1 && !WriteStoreUnlocked(store))
         return {};
-    std::ifstream input(path, std::ios::binary);
-    if (!input)
-        return {};
-    const std::string text((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-    auto items = ParseJsonArray(text);
-    if (items.size() > kMaxItems)
-        items.resize(kMaxItems);
+    return store.records;
+}
+
+std::vector<std::wstring> ClipboardHistory::Load()
+{
+    std::vector<std::wstring> items;
+    for (const auto &record : LoadRecords())
+        items.push_back(Utf8ToWide(record.text));
     return items;
 }
 
@@ -550,29 +424,30 @@ bool ClipboardHistory::AddText(std::wstring text)
         return false;
 
     NamedMutex lock(kStoreMutexName);
-    if (!lock)
+    ClipboardRecord::ParseResult store;
+    if (!lock || !ReadStoreUnlocked(store))
         return false;
 
-    std::vector<std::wstring> items;
-    const auto path = StorePath();
-    if (!path.empty())
+    const std::string utf8 = WideToUtf8(text);
+    if (utf8.empty())
+        return false;
+    if (!store.records.empty() && store.records.front().text == utf8)
     {
-        std::ifstream input(path, std::ios::binary);
-        if (input)
-        {
-            const std::string payload((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-            items = ParseJsonArray(payload);
-        }
+        if (store.migrated_from_v1)
+            WriteStoreUnlocked(store);
+        return false;
     }
 
-    if (!items.empty() && items.front() == text)
-        return false;
-
-    items.erase(std::remove(items.begin(), items.end(), text), items.end());
-    items.insert(items.begin(), std::move(text));
+    auto &items = store.records;
+    items.erase(std::remove_if(items.begin(), items.end(), [&](const auto &record) { return record.text == utf8; }),
+                items.end());
+    const auto now =
+        std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    items.insert(items.begin(),
+                 {ClipboardRecord::GenerateId(), utf8, ClipboardRecord::HashText(utf8), store.device_id, now});
     if (items.size() > kMaxItems)
         items.resize(kMaxItems);
-    return WriteStoreUnlocked(items);
+    return WriteStoreUnlocked(store);
 }
 
 bool ClipboardHistory::RemoveText(const std::wstring &text)
@@ -580,39 +455,28 @@ bool ClipboardHistory::RemoveText(const std::wstring &text)
     if (text.empty())
         return false;
     NamedMutex lock(kStoreMutexName);
-    if (!lock)
+    ClipboardRecord::ParseResult store;
+    if (!lock || !ReadStoreUnlocked(store))
         return false;
 
-    std::vector<std::wstring> items;
-    const auto path = StorePath();
-    if (!path.empty())
-    {
-        std::ifstream input(path, std::ios::binary);
-        if (input)
-        {
-            const std::string payload((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-            items = ParseJsonArray(payload);
-        }
-    }
+    auto &items = store.records;
     const auto before = items.size();
-    items.erase(std::remove(items.begin(), items.end(), text), items.end());
+    const auto utf8 = WideToUtf8(text);
+    items.erase(std::remove_if(items.begin(), items.end(), [&](const auto &record) { return record.text == utf8; }),
+                items.end());
     if (items.size() == before)
         return false;
-    return WriteStoreUnlocked(items);
+    return WriteStoreUnlocked(store);
 }
 
 void ClipboardHistory::Clear()
 {
     NamedMutex lock(kStoreMutexName);
-    if (!lock)
+    ClipboardRecord::ParseResult store;
+    if (!lock || !ReadStoreUnlocked(store))
         return;
-    const auto path = StorePath();
-    if (path.empty())
-        return;
-    std::error_code error;
-    if (!std::filesystem::exists(path, error))
-        return;
-    WriteStoreUnlocked({});
+    store.records.clear();
+    WriteStoreUnlocked(store); // retain device identity when history is cleared
 }
 
 bool ClipboardHistory::IsEnabled()
