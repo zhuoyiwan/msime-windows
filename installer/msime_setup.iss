@@ -1432,7 +1432,7 @@ begin
     '"' + RemoveBackslashUnlessRoot(OldDir) + '" "' + RemoveBackslashUnlessRoot(NewDir) + '" ' +
     'msime_user.db msime_user.db-wal msime_user.db-shm msime_user.db-journal ' +
     'stats.db stats.db-wal stats.db-shm stats.db-journal ' +
-    'config.toml config.base.toml /MOVE /R:2 /W:1 /NJH /NJS /NP /NFL /NDL',
+    'config.toml config.base.toml clipboard_history.json clipboard_peers.dat /MOVE /R:2 /W:1 /NJH /NJS /NP /NFL /NDL',
     '',
     SW_HIDE,
     ewWaitUntilTerminated,
@@ -1685,6 +1685,30 @@ begin
   Result := '';
 end;
 
+procedure DeleteClipboardFirewallRule;
+var
+  ResultCode: Integer;
+begin
+  Exec(ExpandConstant('{sys}\netsh.exe'),
+    'advfirewall firewall delete rule name="MetasequoiaIME Clipboard LAN"',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+procedure InstallClipboardFirewallRule;
+var
+  ResultCode: Integer;
+begin
+  DeleteClipboardFirewallRule;
+  { The Server listens only after explicit opt-in. Restrict the rule to this
+    executable, private networks, the local subnet and the clipboard TCP port. }
+  if not Exec(ExpandConstant('{sys}\netsh.exe'),
+    'advfirewall firewall add rule name="MetasequoiaIME Clipboard LAN" dir=in action=allow ' +
+    'program="' + ExpandConstant('{commonpf64}\metasequoiaime\server\{#MyAppExeName}') + '" ' +
+    'protocol=TCP localport=49876 profile=private remoteip=localsubnet',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
+    Log('Clipboard LAN firewall rule could not be installed');
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
@@ -1696,6 +1720,7 @@ begin
     ApplyNetworkChoiceToUserConfig;
 #endif
     CreateWatchdogLogonTask;
+    InstallClipboardFirewallRule;
     EnsureImeUserDataDir;
     EnsureSharedWebView2DataDir;
     { Keep the old autostart intact until its scheduled-task replacement has
@@ -1713,6 +1738,7 @@ begin
   if CurUninstallStep = usUninstall then
   begin
     DeleteWatchdogLogonTask;
+    DeleteClipboardFirewallRule;
     RegDeleteValue(
       HKLM,
       'Software\Microsoft\Windows\CurrentVersion\Run',

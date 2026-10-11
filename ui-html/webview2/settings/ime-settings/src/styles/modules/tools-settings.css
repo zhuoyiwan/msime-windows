@@ -7,6 +7,33 @@
   max-width: 52em;
 }
 
+#clipboardSyncSection .dict-toolbar {
+  flex-wrap: wrap;
+}
+
+#clipboardSyncSection .dict-input {
+  min-width: 0;
+  flex: 1 1 14rem;
+}
+
+#clipboardSyncDevice,
+#clipboardSyncDevices span {
+  overflow-wrap: anywhere;
+}
+
+#clipboardSyncDevices {
+  list-style: none;
+  padding: 0;
+}
+
+#clipboardSyncDevices li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-block: 0.5rem;
+}
+
 .quick-phrase-card {
   margin-bottom: 18px;
   /* Ensure quick-phrase reuse of dict styles follows card theme */

@@ -18,6 +18,8 @@ set(TEST_SOURCE_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_clipboard_record.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_clipboard_history.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_clipboard_sync.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/test_clipboard_tls.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/test_clipboard_pairing.cpp"
     "${CMAKE_SOURCE_DIR}/src/sync/clipboard_receive_policy.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_kaomoji_sql.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_shuangpin_scheme.cpp"
@@ -163,6 +165,7 @@ add_dependencies(${TEST_EXECUTABLE_NAME} ${DICTIONARY_REPLAY_EXECUTABLE_NAME})
 target_link_libraries(${TEST_EXECUTABLE_NAME}
     PRIVATE
     MetasequoiaIme::Engine
+    msime_clipboard_lan
     MetasequoiaIme::Voice
     nlohmann_json::nlohmann_json
     fmt::fmt

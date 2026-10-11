@@ -13,6 +13,8 @@
 #include "settings/serial_task_queue.h"
 #include "statistics/stats_overview.h"
 #include "statistics/stats_store.h"
+#include "sync/clipboard_sync_service.h"
+#include "clipboard/clipboard_history.h"
 #include <chrono>
 #include <future>
 #include <memory>
@@ -597,7 +599,8 @@ std::wstring BuildConfigMessage(bool refresh_skin_catalog)
             {"y_mode", GetConfiguredYModeEnabled()},
             {"r_mode", GetConfiguredRModeEnabled()},
             {"v_mode", GetConfiguredVModeEnabled()},
-            {"clipboard_history", GetConfiguredClipboardHistoryEnabled()}}},
+            {"clipboard_history", GetConfiguredClipboardHistoryEnabled()},
+            {"clipboard_lan_sync", GetConfiguredClipboardSyncEnabled()}}},
           {"appearance",
            {{"ui_backend", GetConfiguredUiBackend()},
             {"settings_window_linger", GetConfiguredSettingsWindowLinger()},
@@ -1000,6 +1003,8 @@ bool ApplyConfigUpdate(const json::object &data)
         return SetConfiguredVModeEnabled(json::value_to<bool>(data.at("value")));
     if (path == "utility.clipboard_history")
         return SetConfiguredClipboardHistoryEnabled(json::value_to<bool>(data.at("value")));
+    if (path == "utility.clipboard_lan_sync")
+        return SetConfiguredClipboardSyncEnabled(json::value_to<bool>(data.at("value")));
     if (path == "general.paging_minus_equal")
         return SetConfiguredPagingMinusEqualEnabled(json::value_to<bool>(data.at("value")));
     if (path == "general.paging_tab")
@@ -1666,6 +1671,30 @@ void HandleWebMessage(HWND hwnd, ICoreWebView2WebMessageReceivedEventArgs *args)
                 return [serialized = std::move(serialized)] {
                     if (g_webview)
                         g_webview->PostWebMessageAsJson(serialized.c_str());
+                };
+            });
+        }
+        else if (type == "clipboardSyncRequest")
+        {
+            const auto data = value.at("data").as_object();
+            g_worker->Submit([data]() -> SerialTaskQueue::Completion {
+                auto field = [&data](const char *name) {
+                    const auto *value = data.if_contains(name);
+                    return value && value->is_string() ? json::value_to<std::string>(*value) : std::string{};
+                };
+                auto response = json::parse(ClipboardSync::SettingsRequest(field("action"), field("code"),
+                                                                           field("address"), field("device")))
+                                    .as_object();
+                response["type"] = "clipboardSyncResponse";
+                response["requestId"] = data.at("requestId");
+                response["action"] = data.at("action");
+                response["protocolVersion"] = metasequoia::webview::Version;
+                if (!metasequoia::webview::Validate(response, "server"))
+                    throw std::runtime_error("Invalid clipboard sync response");
+                auto message = string_to_wstring(json::serialize(response));
+                return [message = std::move(message)] {
+                    if (g_webview)
+                        g_webview->PostWebMessageAsJson(message.c_str());
                 };
             });
         }
@@ -2377,6 +2406,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show_
     g_worker->Submit([initial_theme] {
         g_worker_com_initialized = SUCCEEDED(CoInitializeEx(nullptr, COINIT_MULTITHREADED));
         TraceStartup("worker: InitImeConfig begin");
+        ClipboardMonitor::DisableForThisProcess();
         InitImeConfig();
         TraceStartup("worker: InitImeConfig end");
         initial_theme->set_value(ResolveConfiguredTheme(GetConfiguredThemeSettings()) == "light");

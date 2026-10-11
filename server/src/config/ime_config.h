@@ -481,6 +481,8 @@ bool SetConfiguredVModeEnabled(bool enabled);
 // VModeChanged 的载荷："0" 关着或不是全拼/双拼，"1" 双拼（只认大写 V），"2" 全拼（V、v 都认）。
 std::wstring FormatVModeWorkerPayload();
 bool GetConfiguredClipboardHistoryEnabled();
+bool GetConfiguredClipboardSyncEnabled();
+bool SetConfiguredClipboardSyncEnabled(bool enabled);
 bool SetConfiguredClipboardHistoryEnabled(bool enabled);
 bool GetConfiguredPagingMinusEqualEnabled();
 bool SetConfiguredPagingMinusEqualEnabled(bool enabled);

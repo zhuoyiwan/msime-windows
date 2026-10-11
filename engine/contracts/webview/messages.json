@@ -835,6 +835,43 @@
           "puncCn"
         ]
       }
+    },
+    "clipboardSyncRequest": {
+      "surfaces": [
+        "settings"
+      ],
+      "data": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "status",
+              "invite",
+              "cancel",
+              "pair",
+              "remove"
+            ]
+          },
+          "code": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          },
+          "device": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "action"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "server": {
@@ -1198,6 +1235,59 @@
         "message"
       ],
       "additionalProperties": true
+    },
+    "clipboardSyncResponse": {
+      "properties": {
+        "requestId": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "message": {
+          "type": "string"
+        },
+        "localDevice": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "expiresIn": {
+          "type": "integer"
+        },
+        "devices": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "device": {
+                "type": "string"
+              },
+              "address": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "device",
+              "address"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "requestId",
+        "action",
+        "ok",
+        "message",
+        "localDevice",
+        "devices"
+      ],
+      "additionalProperties": false
     }
   }
 }

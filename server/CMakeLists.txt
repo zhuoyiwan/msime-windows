@@ -53,6 +53,16 @@ find_package(unofficial-sqlite3 CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(CURL CONFIG REQUIRED)
 find_package(ZLIB REQUIRED)
+find_package(OpenSSL 3.0 REQUIRED)
+
+add_library(msime_clipboard_lan STATIC
+    src/sync/clipboard_tls.cpp
+    src/sync/clipboard_pairing.cpp
+    src/sync/clipboard_sync_service.cpp)
+target_compile_features(msime_clipboard_lan PUBLIC cxx_std_17)
+target_include_directories(msime_clipboard_lan PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src" "${MSIME_REPO_ROOT}")
+target_link_libraries(msime_clipboard_lan PUBLIC OpenSSL::SSL OpenSSL::Crypto ws2_32 crypt32
+    nlohmann_json::nlohmann_json)
 
 # The engine ships its own CMake target. Consume that instead of listing its
 # translation units here, so that adding a file to the engine no longer requires
@@ -326,6 +336,7 @@ add_dependencies(${PROJECT_NAME} Dictionaries)
 target_link_libraries(${PROJECT_NAME} PRIVATE winhttp)
 target_link_libraries(${PROJECT_NAME} PRIVATE CURL::libcurl)
 target_link_libraries(${PROJECT_NAME} PRIVATE ZLIB::ZLIB)
+target_link_libraries(${PROJECT_NAME} PRIVATE msime_clipboard_lan)
 target_link_libraries(${PROJECT_NAME} PRIVATE d2d1 dwrite dwmapi shell32 shcore ole32 bcrypt)
 
 # The helper executables below already build at /W4. The server itself -- the process that owns
@@ -520,6 +531,7 @@ target_include_directories(${SETTINGS_EXECUTABLE_NAME}
     "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/include"
 )
 target_link_libraries(${SETTINGS_EXECUTABLE_NAME} PRIVATE
+    msime_clipboard_lan
     MetasequoiaIme::Engine
     fmt::fmt
     Boost::locale

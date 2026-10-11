@@ -162,6 +162,7 @@ bool g_y_mode_enabled = true;
 bool g_r_mode_enabled = true;
 bool g_v_mode_enabled = true;
 bool g_clipboard_history_enabled = false;
+bool g_clipboard_sync_enabled = false;
 bool g_paging_minus_equal_enabled = true;
 bool g_paging_comma_period_enabled = false;
 bool g_paging_brackets_enabled = false;
@@ -590,6 +591,7 @@ bool LoadImeConfig()
             const bool previous_clipboard_history = g_clipboard_history_enabled;
             static bool clipboard_history_loaded = false;
             g_clipboard_history_enabled = TomlFlexibleBool(tbl["utility"]["clipboard_history"], false);
+            g_clipboard_sync_enabled = TomlFlexibleBool(tbl["utility"]["clipboard_lan_sync"], false);
             if (!g_clipboard_history_enabled && (previous_clipboard_history || !clipboard_history_loaded))
                 ClipboardHistory::Clear();
             clipboard_history_loaded = true;

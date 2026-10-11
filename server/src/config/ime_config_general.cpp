@@ -510,6 +510,21 @@ bool GetConfiguredClipboardHistoryEnabled()
     return g_clipboard_history_enabled;
 }
 
+bool GetConfiguredClipboardSyncEnabled()
+{
+    return g_clipboard_sync_enabled;
+}
+
+bool SetConfiguredClipboardSyncEnabled(bool enabled)
+{
+    if (!WriteConfiguredValue("utility", "clipboard_lan_sync", enabled ? "true" : "false"))
+        return false;
+    g_clipboard_sync_enabled = enabled;
+    if (!enabled)
+        ClipboardHistory::ResetSyncQueue();
+    return true;
+}
+
 bool SetConfiguredClipboardHistoryEnabled(bool enabled)
 {
     if (!WriteConfiguredValue("utility", "clipboard_history", enabled ? "true" : "false"))
@@ -518,6 +533,8 @@ bool SetConfiguredClipboardHistoryEnabled(bool enabled)
     }
     const bool was_enabled = g_clipboard_history_enabled;
     g_clipboard_history_enabled = enabled;
+    if (!enabled)
+        ClipboardHistory::ResetSyncQueue();
     if (was_enabled && !enabled)
         ClipboardHistory::Clear();
     ClipboardMonitor::Sync(enabled);

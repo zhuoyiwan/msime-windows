@@ -7,6 +7,7 @@ type DictionaryRequest = Extract<SettingsMessage, { type: 'dictionaryRequest' }>
 import { serializeHostMessage } from '../../../../shared/messages';
 import { applyDropdownValue, applyToggleState, setMixedCandidateOptionsDisabled, setupDropdownMenu, setupToggleButton } from './shared';
 import { updateConfig } from './config-sync';
+import { setupClipboardSync } from './clipboard-sync';
 
 type QuickPhraseRow = { code: string; word: string; weight: number };
 
@@ -162,6 +163,7 @@ function setupMixedCandidatesSection(): void {
 }
 
 export function setupToolsSettings(): void {
+  setupClipboardSync();
   hoistOverlay(document.getElementById('quickPhraseToast'));
   hoistOverlay(document.getElementById('quickPhraseModal'));
   const table = document.getElementById('quickPhraseTableWrap');

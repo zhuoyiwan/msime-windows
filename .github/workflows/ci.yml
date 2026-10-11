@@ -125,7 +125,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Configure with AddressSanitizer and UndefinedBehaviorSanitizer
+      - name: Install TLS test dependencies
+        # Ubuntu runners normally include these headers; install explicitly for the real TLS tests.
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev
+      - name: Configure portable and TLS tests with sanitizers
         run: >
           cmake -S server/tests/portable -B server/tests/portable/build
           -DCMAKE_BUILD_TYPE=Debug -DMSIME_PORTABLE_TESTS_SANITIZE=ON

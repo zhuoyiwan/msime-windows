@@ -607,7 +607,32 @@
           "punct": 10,
           "other": 0
         },
-        "todayHourly": [0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 5, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        "todayHourly": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          3,
+          5,
+          12,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
         "daily": [
           {
             "dayKey": 20260919,
@@ -720,7 +745,32 @@
           "punct": 0,
           "other": 0
         },
-        "todayHourly": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        "todayHourly": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
         "daily": []
       }
     },
@@ -863,5 +913,94 @@
     "direction": "server",
     "surface": "settings",
     "valid": true
+  },
+  {
+    "name": "clipboard pair request",
+    "message": {
+      "type": "clipboardSyncRequest",
+      "data": {
+        "requestId": "pair-1",
+        "action": "pair",
+        "code": "msime1:full-code",
+        "address": "192.168.1.2"
+      }
+    },
+    "direction": "client",
+    "surface": "settings",
+    "valid": true
+  },
+  {
+    "name": "clipboard sync forbidden on toolbar",
+    "message": {
+      "type": "clipboardSyncRequest",
+      "data": {
+        "requestId": "pair-1",
+        "action": "invite"
+      }
+    },
+    "direction": "client",
+    "surface": "toolbar",
+    "valid": false
+  },
+  {
+    "name": "clipboard unknown action",
+    "message": {
+      "type": "clipboardSyncRequest",
+      "data": {
+        "requestId": "pair-1",
+        "action": "sendEverything"
+      }
+    },
+    "direction": "client",
+    "surface": "settings",
+    "valid": false
+  },
+  {
+    "name": "clipboard nonstring secret",
+    "message": {
+      "type": "clipboardSyncRequest",
+      "data": {
+        "requestId": "pair-1",
+        "action": "pair",
+        "code": 123
+      }
+    },
+    "direction": "client",
+    "surface": "settings",
+    "valid": false
+  },
+  {
+    "name": "clipboard status response",
+    "message": {
+      "type": "clipboardSyncResponse",
+      "requestId": "pair-1",
+      "action": "status",
+      "ok": true,
+      "message": "",
+      "localDevice": "host",
+      "devices": [
+        {
+          "device": "peer",
+          "address": "192.168.1.2"
+        }
+      ]
+    },
+    "direction": "server",
+    "surface": "settings",
+    "valid": true
+  },
+  {
+    "name": "clipboard missing device list",
+    "message": {
+      "type": "clipboardSyncResponse",
+      "requestId": "pair-1",
+      "action": "status",
+      "ok": true,
+      "message": "",
+      "localDevice": "host"
+    },
+    "direction": "server",
+    "surface": "settings",
+    "valid": false
   }
 ]

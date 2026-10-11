@@ -8,6 +8,7 @@
     "tomlplusplus",
     "webview2",
     "nlohmann-json",
+    "openssl",
     "zlib"
   ]
 }

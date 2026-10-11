@@ -208,6 +208,7 @@ extern bool g_y_mode_enabled;
 extern bool g_r_mode_enabled;
 extern bool g_v_mode_enabled;
 extern bool g_clipboard_history_enabled;
+extern bool g_clipboard_sync_enabled;
 extern bool g_paging_minus_equal_enabled;
 extern bool g_paging_comma_period_enabled;
 extern bool g_paging_brackets_enabled;

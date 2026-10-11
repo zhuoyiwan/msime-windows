@@ -13,6 +13,32 @@
     </div>
   </div>
 
+  <div class="section" id="clipboardSyncSection">
+    <div class="section-header">
+      <div>
+        <div class="section-title">局域网剪贴板共享</div>
+        <div class="quick-phrase-description">同时开启剪贴板管理后，将新复制的文本同步到已配对设备的历史面板。两端需在同一可互访的局域网中。</div>
+      </div>
+      <div class="ftb-toggle-btn" id="clipboardSyncToggleBtn" role="switch" aria-checked="false" tabindex="0"><div class="ftb-toggle-knob"></div></div>
+    </div>
+    <p class="dict-hint">本机设备 ID：<span id="clipboardSyncDevice"></span></p>
+    <p class="dict-hint">在本机生成配对码，在另一台设备填写本机的私网 IPv4 与配对码。配对码五分钟内有效、仅供一台设备使用，请通过可信渠道传递。</p>
+    <div class="dict-toolbar">
+      <button type="button" id="clipboardSyncGenerate" class="dict-button secondary">生成配对码</button>
+      <button type="button" id="clipboardSyncCancel" class="dict-button secondary">取消配对码</button>
+      <input id="clipboardSyncInvite" class="dict-input" readonly aria-label="本机配对码" autocomplete="off">
+    </div>
+    <div class="dict-toolbar">
+      <input id="clipboardSyncAddress" class="dict-input" placeholder="对方私网 IPv4，例如 192.168.1.10" aria-label="对方私网 IPv4" maxlength="15" autocomplete="off">
+      <input id="clipboardSyncCode" class="dict-input" placeholder="对方生成的完整配对码" aria-label="对方配对码" maxlength="240" autocomplete="off" spellcheck="false">
+      <button type="button" id="clipboardSyncPair" class="dict-button primary">保存并连接</button>
+    </div>
+    <p id="clipboardSyncStatus" class="dict-hint" role="status" aria-live="polite"></p>
+    <button type="button" id="clipboardSyncRefresh" class="dict-button secondary">刷新设备列表</button>
+    <ul id="clipboardSyncDevices"></ul>
+    <p class="dict-hint">设备列表表示已保存的配对。若无法收发，请检查私网防火墙；IP 改变后撤销并重新配对。关闭共享后停止收发，未发送的队列会清空；历史记录和配对仍保留。</p>
+  </div>
+
   <!-- 候选混输：折叠头 + 总开关，展开后是各项混输的子开关。总开关关闭时子开关置灰禁用，勾选状态仍保留展示 -->
   <div class="section mixed-candidates-section">
     <div class="section-header toggle-section-header">

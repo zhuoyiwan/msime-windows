@@ -62,7 +62,8 @@ export type ClientMessage =
   | { "type": "openEmojiPanel"; "protocolVersion"?: 1 }
   | { "type": "changeIMEMode"; "protocolVersion"?: 1; "data": "cn" | "en" }
   | { "type": "changeCharMode"; "protocolVersion"?: 1; "data": "fullwidth" | "halfwidth" }
-  | { "type": "changePuncMode"; "protocolVersion"?: 1; "data": "puncEn" | "puncCn" };
+  | { "type": "changePuncMode"; "protocolVersion"?: 1; "data": "puncEn" | "puncCn" }
+  | { "type": "clipboardSyncRequest"; "protocolVersion"?: 1; "data": { "requestId": string; "action": "status" | "invite" | "cancel" | "pair" | "remove"; "code"?: string; "address"?: string; "device"?: string } };
 export type ServerMessage =
   | { "type": "configSnapshot"; "protocolVersion"?: 1; "data": { [key: string]: unknown } }
   | { "type": "windowState"; "protocolVersion"?: 1; "data": { "isMaximized": boolean } }
@@ -71,7 +72,8 @@ export type ServerMessage =
   | { "type": "defaultImeResponse"; "protocolVersion"?: 1; "requestId": string; "action": string; "ok": boolean; "message": string; "enabled"?: boolean; "isDefault"?: boolean }
   | { "type": "apiModelListResult"; "protocolVersion"?: 1; "requestId": string; "ok": boolean; "message": string; "models"?: Array<string> }
   | { "type": "dictionaryResponse"; "protocolVersion"?: 1; "requestId": string; "action"?: string; "dictionary"?: string; "ok": boolean; "message": string; "rows": Array<{ "word": string; "code"?: string; "display"?: string; "weight"?: number }>; "content"?: string; "filename"?: string; "offset"?: number; "hasMore"?: boolean; [key: string]: unknown }
-  | { "type": "statsResponse"; "protocolVersion"?: 1; "requestId": string; "action": string; "ok": boolean; "message": string; "overview"?: { "hasData": boolean; "firstDayKey": number; "lastDayKey": number; "days": number; "totalChars": number; "totalActiveMs": number; "todayDayKey": number; "todayChars": number; "todayActiveMs": number; "averagePerDay": number; "currentStreak": number; "longestStreak": number; "bestDayKey": number; "bestDayChars": number; "todaySpeed": number; "averageSpeed": number; "fastestSpeed": number; "fastestDayKey": number; "categories": { "cjk": number; "latin": number; "digit": number; "punct": number; "other": number }; "todayHourly": Array<number>; "daily": Array<{ "dayKey": number; "cjk": number; "latin": number; "digit": number; "punct": number; "other": number; "activeMs": number }> }; "removedDays"?: number; [key: string]: unknown };
+  | { "type": "statsResponse"; "protocolVersion"?: 1; "requestId": string; "action": string; "ok": boolean; "message": string; "overview"?: { "hasData": boolean; "firstDayKey": number; "lastDayKey": number; "days": number; "totalChars": number; "totalActiveMs": number; "todayDayKey": number; "todayChars": number; "todayActiveMs": number; "averagePerDay": number; "currentStreak": number; "longestStreak": number; "bestDayKey": number; "bestDayChars": number; "todaySpeed": number; "averageSpeed": number; "fastestSpeed": number; "fastestDayKey": number; "categories": { "cjk": number; "latin": number; "digit": number; "punct": number; "other": number }; "todayHourly": Array<number>; "daily": Array<{ "dayKey": number; "cjk": number; "latin": number; "digit": number; "punct": number; "other": number; "activeMs": number }> }; "removedDays"?: number; [key: string]: unknown }
+  | { "type": "clipboardSyncResponse"; "protocolVersion"?: 1; "requestId": string; "action": string; "ok": boolean; "message": string; "localDevice": string; "code"?: string; "expiresIn"?: number; "devices": Array<{ "device": string; "address": string }> };
 export type SettingsMessage =
   | { "type": "configRequest"; "protocolVersion"?: 1 }
   | { "type": "skinCatalogRequest"; "protocolVersion"?: 1 }
@@ -102,7 +104,8 @@ export type SettingsMessage =
   | { "type": "dictionaryRequest"; "protocolVersion"?: 1; "data": { "requestId": string; "dictionary": "quanpin" | "wubi" | "english" | "quick"; "action": "query" | "create" | "update" | "delete" | "import" | "importHans" | "export"; "word"?: string; "code"?: string; "content"?: string; "weight"?: number; "oldWord"?: string; "oldCode"?: string; "display"?: string; "oldDisplay"?: string; "offset"?: number; "limit"?: number } }
   | { "type": "statsRequest"; "protocolVersion"?: 1; "data": { "requestId": string; "action": "overview" | "clearAll" | "openDirectory" } }
   | { "type": "defaultImeRequest"; "protocolVersion"?: 1; "data": { "requestId": string; "action": "status" | "setDefault" | "openSystemSettings" } }
-  | { "type": "openKeyboardPanel"; "protocolVersion"?: 1 };
+  | { "type": "openKeyboardPanel"; "protocolVersion"?: 1 }
+  | { "type": "clipboardSyncRequest"; "protocolVersion"?: 1; "data": { "requestId": string; "action": "status" | "invite" | "cancel" | "pair" | "remove"; "code"?: string; "address"?: string; "device"?: string } };
 declare global {
   var MsimeProtocol: {
     validate(message: unknown, direction: 'client' | 'server', surface?: string): boolean;

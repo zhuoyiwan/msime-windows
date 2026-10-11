@@ -9,6 +9,7 @@
 #include "ipc/ipc.h"
 #include "config/ime_config.h"
 #include "clipboard/clipboard_history.h"
+#include "sync/clipboard_sync_service.h"
 #include <windows.h>
 #include <fmt/xchar.h>
 #include <spdlog/spdlog.h>
@@ -171,6 +172,7 @@ int CALLBACK WinMain(_In_ HINSTANCE hInstance, _In_ HINSTANCE /*hPrevInstance*/,
         Sleep(INFINITE);
     }
 
+    ClipboardSync::StartLanService();
     CloudIme::Start([](const std::string &candidate, const std::string &pinyin, uint64_t generation) {
         FanyNamedPipe::EnqueueCloudCandidate(candidate, pinyin, generation);
     });
@@ -209,6 +211,7 @@ int CALLBACK WinMain(_In_ HINSTANCE hInstance, _In_ HINSTANCE /*hPrevInstance*/,
     AiAssistant::Stop();
     CloudIme::Stop();
     ClipboardMonitor::Stop();
+    ClipboardSync::StopLanService();
     VoiceInput::Shutdown();
 
     pipe_running = false;

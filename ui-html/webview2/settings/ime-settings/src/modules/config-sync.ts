@@ -279,6 +279,9 @@ function applyConfigData(data: Record<string, any>, target?: string): void {
   if (typeof data?.utility?.clipboard_history === 'boolean') {
     applyToggleState('clipboardHistoryToggleBtn', data.utility.clipboard_history);
   }
+  if (typeof data?.utility?.clipboard_lan_sync === 'boolean') {
+    applyToggleState('clipboardSyncToggleBtn', data.utility.clipboard_lan_sync);
+  }
   if (typeof data?.general?.paging_minus_equal === 'boolean') {
     const checkbox = findElement('pagingMinusEqualCheckbox') as HTMLInputElement | null;
     if (checkbox) checkbox.checked = data.general.paging_minus_equal;

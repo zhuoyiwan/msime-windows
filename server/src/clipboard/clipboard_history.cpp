@@ -1,5 +1,6 @@
 #include "clipboard/clipboard_history.h"
 #include "clipboard/clipboard_record.h"
+#include "engine/contracts/clipboard_lan.h"
 #include "utils/common_utils.h"
 
 #include <Windows.h>
@@ -280,6 +281,9 @@ struct MonitorState
 };
 
 MonitorState g_monitor;
+std::atomic<bool> g_monitor_allowed{true};
+std::mutex g_observer_mutex;
+std::function<void(const ClipboardRecord::Record &)> g_capture_observer;
 
 void CaptureClipboardText(HWND hwnd)
 {
@@ -409,6 +413,31 @@ std::vector<ClipboardRecord::Record> ClipboardHistory::LoadRecords()
     return store.records;
 }
 
+std::string ClipboardHistory::LocalDeviceId()
+{
+    NamedMutex lock(kStoreMutexName);
+    ClipboardRecord::ParseResult store;
+    if (!lock || !ReadStoreUnlocked(store) || (store.migrated_from_v1 && !WriteStoreUnlocked(store)))
+        return {};
+    return store.device_id;
+}
+
+void ClipboardHistory::SetCaptureObserver(std::function<void(const ClipboardRecord::Record &)> observer)
+{
+    std::lock_guard<std::mutex> lock(g_observer_mutex);
+    g_capture_observer = std::move(observer);
+}
+
+void ClipboardHistory::ResetSyncQueue()
+{
+    const HANDLE event = CreateEventW(nullptr, TRUE, FALSE, kSyncResetEvent);
+    if (event)
+    {
+        SetEvent(event);
+        CloseHandle(event);
+    }
+}
+
 std::vector<std::wstring> ClipboardHistory::Load()
 {
     std::vector<std::wstring> items;
@@ -445,31 +474,47 @@ bool ClipboardHistory::AddText(std::wstring text)
     if (text.empty() || !IsEnabled())
         return false;
 
-    NamedMutex lock(kStoreMutexName);
-    ClipboardRecord::ParseResult store;
-    if (!lock || !ReadStoreUnlocked(store))
-        return false;
-
-    const std::string utf8 = WideToUtf8(text);
-    if (utf8.empty())
-        return false;
-    if (!store.records.empty() && store.records.front().text == utf8)
+    ClipboardRecord::Record captured;
     {
-        if (store.migrated_from_v1)
-            WriteStoreUnlocked(store);
-        return false;
-    }
+        NamedMutex lock(kStoreMutexName);
+        ClipboardRecord::ParseResult store;
+        if (!lock || !IsEnabled() || !ReadStoreUnlocked(store))
+            return false;
+        const std::string utf8 = WideToUtf8(text);
+        if (utf8.empty())
+            return false;
+        // Pairing codes are credentials. Copying one from Settings must not publish it to other peers.
+        if (utf8.find("msime1:") != std::string::npos)
+            return false;
+        if (!store.records.empty() && store.records.front().text == utf8)
+        {
+            if (store.migrated_from_v1)
+                WriteStoreUnlocked(store);
+            return false;
+        }
 
-    auto &items = store.records;
-    items.erase(std::remove_if(items.begin(), items.end(), [&](const auto &record) { return record.text == utf8; }),
-                items.end());
-    const auto now =
-        std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-    items.insert(items.begin(),
-                 {ClipboardRecord::GenerateId(), utf8, ClipboardRecord::HashText(utf8), store.device_id, now});
-    if (items.size() > kMaxItems)
-        items.resize(kMaxItems);
-    return WriteStoreUnlocked(store);
+        auto &items = store.records;
+        items.erase(std::remove_if(items.begin(), items.end(), [&](const auto &record) { return record.text == utf8; }),
+                    items.end());
+        const auto now =
+            std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch())
+                .count();
+        items.insert(items.begin(),
+                     {ClipboardRecord::GenerateId(), utf8, ClipboardRecord::HashText(utf8), store.device_id, now});
+        if (items.size() > kMaxItems)
+            items.resize(kMaxItems);
+        if (!WriteStoreUnlocked(store))
+            return false;
+        captured = items.front();
+    }
+    std::function<void(const ClipboardRecord::Record &)> observer;
+    {
+        std::lock_guard<std::mutex> lock(g_observer_mutex);
+        observer = g_capture_observer;
+    }
+    if (observer)
+        observer(captured);
+    return true;
 }
 
 bool ClipboardHistory::RemoveText(const std::wstring &text)
@@ -501,7 +546,9 @@ void ClipboardHistory::Clear()
     WriteStoreUnlocked(store); // retain device identity when history is cleared
 }
 
-bool ClipboardHistory::IsEnabled()
+namespace
+{
+bool ReadUtilityFlag(std::string_view key)
 {
     const auto path = ConfigPath();
     if (path.empty())
@@ -524,7 +571,7 @@ bool ClipboardHistory::IsEnabled()
         const size_t equals = trimmed.find('=');
         if (equals == std::string::npos)
             continue;
-        if (TrimCopy(trimmed.substr(0, equals)) != "clipboard_history")
+        if (TrimCopy(trimmed.substr(0, equals)) != key)
             continue;
         std::string value = trimmed.substr(equals + 1);
         const size_t comment = value.find('#');
@@ -534,13 +581,27 @@ bool ClipboardHistory::IsEnabled()
     }
     return false;
 }
+} // namespace
+
+bool ClipboardHistory::IsEnabled()
+{
+    return ReadUtilityFlag("clipboard_history");
+}
+
+bool ClipboardHistory::IsSyncEnabled()
+{
+    return IsEnabled() && ReadUtilityFlag("clipboard_lan_sync");
+}
 
 bool ClipboardHistory::SetEnabled(bool enabled)
 {
     if (!WriteEnabledFlag(enabled))
         return false;
     if (!enabled)
+    {
+        ResetSyncQueue();
         Clear();
+    }
     ClipboardMonitor::Sync(enabled);
     return true;
 }
@@ -562,12 +623,18 @@ std::filesystem::file_time_type ClipboardHistory::ConfigWriteTime()
 void ClipboardMonitor::Start()
 {
     std::lock_guard<std::mutex> lock(g_monitor.mutex);
-    if (g_monitor.running)
+    if (g_monitor.running || !g_monitor_allowed)
         return;
     g_monitor.running = true;
     g_monitor.thread = CreateThread(nullptr, 0, MonitorThread, nullptr, 0, nullptr);
     if (!g_monitor.thread)
         g_monitor.running = false;
+}
+
+void ClipboardMonitor::DisableForThisProcess()
+{
+    g_monitor_allowed = false;
+    Stop();
 }
 
 void ClipboardMonitor::Stop()

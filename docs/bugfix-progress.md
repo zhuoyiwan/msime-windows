@@ -38,10 +38,10 @@ P0 的状态按代码证据记录；旧 issue 仍 open，不能据此断定当�
 
 ## 验证
 
-Windows 无外部依赖的测试入口：
+测试入口（本轮新增的 TLS 和 Windows 配对目标需要 OpenSSL 3.x 与 nlohmann/json 开发头；标准 vcpkg 环境可提供）：
 
 ```powershell
-cmake -S server/tests/portable -B server/tests/portable/build -A x64
+cmake -S server/tests/portable -B server/tests/portable/build -A x64 "-DOPENSSL_ROOT_DIR=C:/path/to/openssl" "-DNLOHMANN_JSON_INCLUDE_DIR=C:/path/to/json/include"
 cmake --build server/tests/portable/build --config Release --parallel
 ctest --test-dir server/tests/portable/build -C Release --output-on-failure
 ```
@@ -65,6 +65,19 @@ ctest --test-dir server/tests/portable/build -C Release --output-on-failure
 
 完整 Server/安装包构建、真实游戏和旧反馈环境复测尚未执行；本机没有现成的 Server 构建树及完整依赖/词库。
 
+## 本轮继续：局域网加密传输
+
+- Windows 已接入手动私网 IPv4、单次五分钟配对码、TLS 1.3 external PSK + ECDHE、双向批次收发及真实历史导入。协议和跨语言约定见 `engine/contracts/clipboard_lan.{h,md}`。
+- 配对密钥由 OpenSSL CSPRNG 生成，凭证文件整体用当前用户 DPAPI 加密并原子替换；过期、取消、错误身份、撤销及损坏文件均拒绝认证。新配对最多八台。
+- 设置页加入 opt-in 开关、生成/取消配对码、填写私网 IP 与完整配对码、刷新/撤销设备。设备列表表示保存的信任，不冒充实时在线状态。出厂模板、工作配置及两端读写映射均已同步。
+- Server 统一负责采集，设置进程不再启动重复监听，避免抢先写入而漏发。只有成功的新本机采集进入队列；导入、迁移及启动前历史不广播。复制包含配对码前缀的文本不会保存或分享。
+- 单设备队列最多 50 条，成功确认后删除已发送 ID，保留传输期间的新采集；关闭同步会跨进程通知清空队列，退出也清空。该队列不持久化，不保证长期离线补发。
+- 网络只接受私网 IPv4，TLS 固定 1.3 / TLS_AES_128_GCM_SHA256，要求 ECDHE，关闭 0-RTT、tickets 和恢复缓存。网络 I/O 有整体三秒期限和停止轮询；存储操作仍受既有互斥体超时控制。
+- 安装器加程序级私有网络/本地子网入站规则，卸载时移除；数据目录迁移同时保留历史和加密配对文件。只编译了防火墙函数探针，未运行安装器或改变本机规则。
+- 本机临时目录构建了校验 SHA256 后的 OpenSSL 3.5.9，使用真实 TCP/TLS 做双端测试。Release 共 **96 个 C++ 用例**通过（72 portable、9 history、8 TLS、7 pairing/service）；涵盖错误密钥、未知 key、冒充设备、明文绕过、停止中断、过期/撤销、DPAPI、真实服务采集→发送→远端导入和不回填旧历史。
+- 设置页 TypeScript 检查、Vite 生产构建及 **129 个前端用例**通过；**68 个共享 WebView 契约 fixture**通过。本机缺少 `python3` 命令别名，采用同样的 `python sync-contracts.py --check`、`pnpm exec tsc --noEmit` 与 `pnpm exec vite build` 完成构建步骤。
+- Linux ASan/UBSan job 已加入真实 TLS 测试和 libssl-dev 依赖；本机未跑 Linux sanitizer。仍未构建完整 Server/设置 EXE/安装包，也未进行真实双机安装、Android 互通或不同 DPI 下的设置页目视验证。
+
 ## 后续
 
-先继续 P0 复现与剩余检测修复，再实现 LAN 发现、经过身份验证的设备配对、加密传输和设置页设备管理。Android 按已选路线 A 在 msime 仓推进。本次完成数据模型基础，不代表已经能跨设备同步。
+继续真实双机安装与完整构建验证，加入自动发现，并在已选路线 A 的 msime 仓实现 Android 宿主及此 TLS profile 对接。P0 真实场景复现仍需继续，不把相关基础改动当成所有反馈均已修复。
