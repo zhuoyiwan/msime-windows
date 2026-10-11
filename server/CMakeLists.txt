@@ -60,6 +60,9 @@ add_library(msime_clipboard_lan STATIC
     src/sync/clipboard_pairing.cpp
     src/sync/clipboard_sync_service.cpp)
 target_compile_features(msime_clipboard_lan PUBLIC cxx_std_17)
+if(MSVC)
+    target_compile_options(msime_clipboard_lan PRIVATE /utf-8)
+endif()
 target_include_directories(msime_clipboard_lan PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src" "${MSIME_REPO_ROOT}")
 target_link_libraries(msime_clipboard_lan PUBLIC OpenSSL::SSL OpenSSL::Crypto ws2_32 crypt32
     nlohmann_json::nlohmann_json)
