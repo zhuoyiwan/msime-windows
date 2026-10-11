@@ -118,10 +118,10 @@ LRESULT CALLBACK WndProcCandWindow(HWND hwnd, UINT message, WPARAM wParam, LPARA
         // g_candidate_force_layout marks the cases (DPI / display change) where
         // the same content must still be re-laid out, so never dedup through it.
         const std::wstring signaturePreedit = showPreedit ? preedit : std::wstring{};
-        const std::wstring frameSignature =
-            fmt::format(L"{}:{}|{}|{},{}|{}", signaturePreedit.size(), signaturePreedit,
-                        string_to_wstring(CandidatePageSignature(candidatePage->page_views)), layoutCaret.x,
-                        layoutCaret.y, candidatePage->selected_index_in_page);
+        const CandidateFramePageState pageState{candidatePage->selected_index_in_page, candidatePage->page_index,
+                                                candidatePage->has_previous_page, candidatePage->has_next_page};
+        const std::wstring frameSignature = CandidateFrameSignature(signaturePreedit, candidatePage->page_views,
+                                                                    layoutCaret.x, layoutCaret.y, pageState);
         if (::is_global_wnd_cand_shown && !g_candidate_force_layout.load() &&
             frameSignature == g_last_rendered_candidate_signature &&
             updateStartedTick - g_last_rendered_candidate_tick < kCandidateShowDedupWindowMs)

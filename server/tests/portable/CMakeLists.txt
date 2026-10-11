@@ -20,6 +20,7 @@ add_executable(portable_tests
     "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp"
     "${SERVER_ROOT}/tests/src/test_skin_css_policy.cpp"
     "${SERVER_ROOT}/tests/src/test_input_key_policy.cpp"
+    "${SERVER_ROOT}/tests/src/test_candidate_view_model.cpp"
     "${SERVER_ROOT}/tests/src/test_candidate_text_policy.cpp"
     "${SERVER_ROOT}/src/webview2/skin_css_policy.cpp"
 )
