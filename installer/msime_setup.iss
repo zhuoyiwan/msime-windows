@@ -18,7 +18,7 @@
 ; 上面两条都不把 PDB 打进包；要带符号用 .\test-symbols.ps1。
 ; 本仓库不包含任何预置代码签名证书。
 
-#define MyAppName      "Metasequoia IME 水杉输入法"
+#define MyAppName      "Metasequoia IME 水杉输入法（zhuoyiwan 改版）"
 #define MyAppVersion   "0.0.1"
 #define MyAppPublisher "Metasequoia"
 #define MyAppExeName   "MetasequoiaImeServer.exe"

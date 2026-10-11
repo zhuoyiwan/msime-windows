@@ -86,7 +86,8 @@ ctest --test-dir server/tests/portable/build -C Release --output-on-failure
 - 为 `msime_clipboard_lan` 补上 MSVC `/utf-8`：完整构建发现该目标早于目录级编译选项创建，按本机代码页解析中文注释会吞掉后续命名空间声明；独立测试目标已有此选项，所以之前没有暴露。
 - Visual Studio 2022 完整构建 x86、x64 TSF DLL；两套各 12 项 CTest 全部通过。Server、设置程序及全部面板也已完整构建，Server 的 **666 个用例**、语音控制测试及 **68 个共享契约 fixture** 在隔离数据目录通过。
 - 本地从干净的 `msime-dictionary` 提交 `4909582a8ce345c23809750e675e3d9e5f9516df` 构建完整词库；语言模型和神经模型通过各自锁文件摘要校验。构建依赖使用 vcpkg 锁定基线，TLS 用 OpenSSL 3.6.4。
-- Inno Setup 6.7.3 编译完整未签名测试包 `MetasequoiaIME_Setup_v0.7.1-local-20261011-unsigned.exe`，归档完整性检查通过。没有安装、注册 TSF、信任测试证书或修改防火墙；实际双机安装、Android 互通和 DPI 目视验证仍未执行。
+- Inno Setup 6.7.3 编译完整未签名测试包 `MetasequoiaIME_Setup_v0.7.1-zhuoyiwan-local-20261011-unsigned.exe`，归档完整性检查通过。没有安装、注册 TSF、信任测试证书或修改防火墙；实际双机安装、Android 互通和 DPI 目视验证仍未执行。
+- 设置页“关于”和安装器名称标明“zhuoyiwan 改版”，说明基于开源水杉输入法二次开发与维护，保留原项目名称和许可链接；前端 TypeScript 检查、生产构建通过，实际解包确认关于页和安装/卸载名称均包含标识，并生成 SHA256 校验文件。
 
 ## 后续
 
