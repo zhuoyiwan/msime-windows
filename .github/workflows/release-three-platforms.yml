@@ -316,6 +316,11 @@ jobs:
         set -euo pipefail
         cargo test -p msime-engine --lib --locked
         cargo clippy -p msime-engine --lib --locked -- -D warnings
+    - name: Fetch locked full-edition language resources
+      run: |
+        set -euo pipefail
+        python3 scripts/fetch_offline_glosses.py
+        python3 scripts/fetch_language_dictionaries.py
     - name: Build and sign fixed native ARM64 APK
       env:
         RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
@@ -326,12 +331,13 @@ jobs:
         export MSIME_ANDROID_RELEASE_KEYSTORE="$RUNNER_TEMP/msime-release.p12"
         trap 'rm -f "$MSIME_ANDROID_RELEASE_KEYSTORE"' EXIT
         printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 --decode > "$MSIME_ANDROID_RELEASE_KEYSTORE"
+        export MSIME_ANDROID_RELEASE_KEYSTORE_ALIAS=zhuoyiwan-android
+        mkdir -p target/resources
         resource_dir="$(cargo run --quiet -p msime-client-core --example install_resources --locked -- target/resources)"
         export MSIME_EDITION=full
+        export MSIME_REQUIRE_LANGUAGE_DICTIONARIES=1
         bash platforms/android/build-apk.sh "$resource_dir"
-        cd platforms/android/gradle-app
-        ./gradlew lintFullRelease --no-daemon
-        cd ../../..
+        apps/desktop/src-tauri/gen/android/gradlew --project-dir platforms/android/gradle-app lintFullRelease --no-daemon
         mkdir -p dist
         apk=target/android/msime-android.apk
         tools="$ANDROID_SDK_ROOT/build-tools/35.0.0"
