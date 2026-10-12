@@ -110,7 +110,14 @@ jobs:
           trap 'hdiutil detach -quiet "$mount" || true' EXIT
           MSIME_LOCAL_VERIFY_ONLY=1 MSIME_LOCAL_APPLICATIONS_DIR="$RUNNER_TEMP/msime-local-applications" bash "$mount/安装 zhuoyiwan 版.command"
           test -f "$mount/zhuoyiwan 本机安装说明.md"
-          codesign --verify --deep --strict "$RUNNER_TEMP/msime-local-applications/MSIME-zhuoyiwan.app"
+          local_app="$RUNNER_TEMP/msime-local-applications/MSIME-zhuoyiwan.app"
+          input_method="$local_app/Contents/Resources/水杉输入法.app"
+          codesign --verify --deep --strict "$local_app"
+          codesign --verify --deep --strict "$input_method"
+          codesign -dv --verbose=4 "$input_method" 2>&1 | grep -F 'Authority=MSIME zhuoyiwan Local Code Signing'
+          registered=0
+          "$input_method/Contents/MacOS/水杉输入法" --input-source-registered || registered=$?
+          [[ "$registered" == 0 || "$registered" == 3 ]]
           echo '本机自签名路径通过；CI 未验收普通用户登录会话中的输入源注册和中文候选。' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Assemble all three verified packages
@@ -121,6 +128,14 @@ jobs:
           cp "target/macos-package/dist/msime-macos-${version}-universal.dmg" "release-assets/MetasequoiaIME_macOS_v${version}-zhuoyiwan-universal-local.dmg"
           cp "target/macos-package/dist/msime-macos-${version}-dsym.zip" release-assets/
           cp staged/*.exe staged/*.apk staged/release-provenance.json release-assets/
+          python3 - <<'PY'
+          import json, os, pathlib
+          path = pathlib.Path('release-assets/release-provenance.json')
+          manifest = json.loads(path.read_text())
+          manifest['workflow_commit'] = os.environ['GITHUB_SHA']
+          manifest['workflow_run'] = os.environ['GITHUB_SERVER_URL'] + '/' + os.environ['GITHUB_REPOSITORY'] + '/actions/runs/' + os.environ['GITHUB_RUN_ID']
+          path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n')
+          PY
           cp platforms/macos/LOCAL-FORK-INSTALL.md release-assets/MACOS-INSTALL.md
           cd release-assets
           shasum -a 256 -- *.exe *.apk *.dmg *.zip > SHA256SUMS.txt
@@ -137,5 +152,5 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" == true ]]
-          gh release upload "$RELEASE_TAG" release-assets/*.dmg release-assets/*.zip release-assets/SHA256SUMS.txt release-assets/MACOS-INSTALL.md --clobber
+          gh release upload "$RELEASE_TAG" release-assets/*.dmg release-assets/*.zip release-assets/SHA256SUMS.txt release-assets/MACOS-INSTALL.md release-assets/release-provenance.json --clobber
           echo "三端产物已暂存到草稿 Release：$RELEASE_TAG。发布前需核对运行结果与资产校验和。" >> "$GITHUB_STEP_SUMMARY"
