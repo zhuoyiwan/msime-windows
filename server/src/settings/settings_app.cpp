@@ -4,6 +4,7 @@
 #include "global/globals.h"
 #include "resource/resource.h"
 #include "settings/settings_launcher.h"
+#include "settings/fork_update.h"
 #include "settings/api_credential_test.h"
 #include "settings/collocation_model.h"
 #include "settings/neural_model.h"
@@ -91,6 +92,7 @@ bool g_closing = false;
 bool g_lingering = false;
 bool g_reload_pending = false;
 bool g_settings_light = false;
+bool g_update_downloading = false;
 // appearance.settings_window_linger 的 UI 线程副本，由 ConfigCompletion 更新。
 std::string g_settings_window_linger = "off";
 std::wstring g_last_config_message;
@@ -1612,6 +1614,45 @@ void HandleWebMessage(HWND hwnd, ICoreWebView2WebMessageReceivedEventArgs *args)
                 MessageBoxW(g_settings_hwnd, L"未能重启输入法进程，请稍后重试。", L"水杉输入法",
                             MB_OK | MB_ICONWARNING);
             }
+        }
+        else if (type == "installForkUpdate")
+        {
+            if (g_update_downloading)
+                return;
+            const auto &data = value.at("data").as_object();
+            const auto tag = json::value_to<std::string>(data.at("tag"));
+            const auto name = json::value_to<std::string>(data.at("name"));
+            const auto digest = json::value_to<std::string>(data.at("sha256"));
+            if (!fork_update::ValidRequest(tag, name, digest))
+                return;
+            g_update_downloading = true;
+            g_worker->Submit([tag, name, digest]() -> SerialTaskQueue::Completion {
+                fork_update::DownloadResult result;
+                try
+                {
+                    result = fork_update::Download(tag, name, digest);
+                }
+                catch (const std::exception &)
+                {
+                    result.message = "更新下载失败，请重试或前往 GitHub 发布页";
+                }
+                return [result] {
+                    g_update_downloading = false;
+                    if (g_closing || !g_webview)
+                        return;
+                    bool ok = !result.installer.empty();
+                    std::string message = result.message;
+                    if (ok &&
+                        reinterpret_cast<INT_PTR>(ShellExecuteW(g_settings_hwnd, L"open", result.installer.c_str(),
+                                                                nullptr, nullptr, SW_SHOWNORMAL)) <= 32)
+                    {
+                        ok = false;
+                        message = "安装包已下载，但安装向导未打开；请前往 GitHub 手动下载";
+                    }
+                    const nlohmann::json response = {{"type", "forkUpdateResponse"}, {"ok", ok}, {"message", message}};
+                    g_webview->PostWebMessageAsJson(string_to_wstring(response.dump()).c_str());
+                };
+            });
         }
         else if (type == "openExternalUrl")
         {

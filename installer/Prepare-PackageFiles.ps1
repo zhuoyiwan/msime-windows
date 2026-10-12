@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$TargetVersion = '0.0.1',
+    [string]$DisplayVersion = '',
     [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot),
     # Component paths are relative to RepoRoot and default to the consolidated layout.
     # Historical or custom layouts remain available through explicit overrides.
@@ -348,8 +349,8 @@ Get-ChildItem -LiteralPath $settingsDist -Recurse -File -Include '*.js', '*.html
     $content = Get-Content -LiteralPath $_.FullName -Raw
     $updated = [regex]::Replace(
         $content,
-        '(<div class="about-version">)v\d+(?:\.\d+)+(</div>)',
-        "`$1v$TargetVersion`$2"
+        '(<div class="about-version">)v[^<]+(</div>)',
+        "`$1v$(if ($DisplayVersion) { $DisplayVersion } else { $TargetVersion })`$2"
     )
     if ($updated -ne $content) {
         Set-Content -LiteralPath $_.FullName -Value $updated -Encoding utf8NoBOM

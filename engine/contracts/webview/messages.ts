@@ -19,6 +19,7 @@ export type ClientMessage =
   | { "type": "restartServer"; "protocolVersion"?: 1 }
   | { "type": "copyText"; "protocolVersion"?: 1; "data": string }
   | { "type": "openExternalUrl"; "protocolVersion"?: 1; "data": string }
+  | { "type": "installForkUpdate"; "protocolVersion"?: 1; "data": { "tag": string; "name": string; "sha256": string } }
   | { "type": "dragStart"; "protocolVersion"?: 1 }
   | { "type": "focus"; "protocolVersion"?: 1 }
   | { "type": "resizeStart"; "protocolVersion"?: 1; "data": "left" | "right" | "top" | "bottom" | "left-top" | "right-top" | "left-bottom" | "right-bottom" | "client" }
@@ -65,6 +66,7 @@ export type ClientMessage =
   | { "type": "changePuncMode"; "protocolVersion"?: 1; "data": "puncEn" | "puncCn" }
   | { "type": "clipboardSyncRequest"; "protocolVersion"?: 1; "data": { "requestId": string; "action": "status" | "invite" | "cancel" | "pair" | "remove"; "code"?: string; "address"?: string; "device"?: string } };
 export type ServerMessage =
+  | { "type": "forkUpdateResponse"; "protocolVersion"?: 1; "ok": boolean; "message": string }
   | { "type": "configSnapshot"; "protocolVersion"?: 1; "data": { [key: string]: unknown } }
   | { "type": "windowState"; "protocolVersion"?: 1; "data": { "isMaximized": boolean } }
   | { "type": "maxButtonEvent"; "protocolVersion"?: 1; "data": { "event": "enter" | "leave" | "down" | "up" | "click" } }
@@ -92,6 +94,7 @@ export type SettingsMessage =
   | { "type": "restartServer"; "protocolVersion"?: 1 }
   | { "type": "copyText"; "protocolVersion"?: 1; "data": string }
   | { "type": "openExternalUrl"; "protocolVersion"?: 1; "data": string }
+  | { "type": "installForkUpdate"; "protocolVersion"?: 1; "data": { "tag": string; "name": string; "sha256": string } }
   | { "type": "dragStart"; "protocolVersion"?: 1 }
   | { "type": "focus"; "protocolVersion"?: 1 }
   | { "type": "resizeStart"; "protocolVersion"?: 1; "data": "left" | "right" | "top" | "bottom" | "left-top" | "right-top" | "left-bottom" | "right-bottom" | "client" }

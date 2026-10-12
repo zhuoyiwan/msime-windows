@@ -469,6 +469,8 @@ add_executable(${SETTINGS_EXECUTABLE_NAME} WIN32
     "./src/utils/wallpaper_palette.cpp"
     "./src/utils/wallpaper_palette.h"
     "./src/settings/settings_app.cpp"
+    "./src/settings/fork_update.cpp"
+    "./src/settings/fork_update.h"
     "./src/settings/api_credential_test.cpp"
     "./src/settings/api_credential_test.h"
     "./src/settings/collocation_model.cpp"

@@ -1,13 +1,11 @@
 import { serializeHostMessage } from '../../../../shared/messages';
 import { updateConfig } from './config-sync';
 import { setupToggleButton } from './shared';
-import type { UpdateManifest, ValidatedUpdate } from './update-manifest';
-import { compareVersions, describeInstallerTrust, mirrorDownloadUrl, parseVersion, validateManifest } from './update-manifest';
+import type { ValidatedUpdate } from './update-manifest';
+import { describeInstallerTrust, parseVersion } from './update-manifest';
+import { FORK_API, FORK_RELEASES, pickForkUpdate, type ForkUpdate } from './fork-update';
+import { onHostMessage } from '../utils/host-messages';
 
-const UPDATE_MANIFEST_URL = 'https://msime.app/update.json';
-const RELEASES_PAGE_URL = 'https://github.com/metasequoiaime/MSIME-Windows/releases';
-// msime.app's download mirror (Aliyun OSS, Hong Kong). GitHub release downloads from mainland China often run at tens of KB/s.
-const DOWNLOAD_MIRROR_PREFIX = 'https://dl.msime.app/gh/';
 const WEBSITE_URL = 'https://msime.app/';
 const LICENSE_URL ='https://github.com/metasequoiaime/MSIME-Windows/blob/main/LICENSE';
 const PRIVACY_URL = 'https://github.com/metasequoiaime/MSIME-Windows/blob/main/PRIVACY.md';
@@ -113,8 +111,14 @@ export function setupAboutSettings(): void {
     return;
   }
 
-  let releaseUrl = RELEASES_PAGE_URL;
-  let mirrorUrl: string | null = null;
+  let selected: ForkUpdate | null = null;
+  let installing = false;
+  const auto = document.getElementById('about-auto-update') as HTMLInputElement | null;
+  try { if (auto) auto.checked = localStorage.getItem('zhuoyiwan.auto-update') === 'true'; } catch { /* 存储不可用时仍可手动更新。 */ }
+  auto?.addEventListener('change', () => {
+    try { localStorage.setItem('zhuoyiwan.auto-update', String(auto.checked)); } catch { /* 保留本次选择。 */ }
+    if (auto.checked) void check(true);
+  });
 
   const setStatus = (message: string, kind: 'idle' | 'success' | 'error' = 'idle') => {
     statusLabel.textContent = message;
@@ -123,15 +127,25 @@ export function setupAboutSettings(): void {
 
   cancelButton.addEventListener('click', () => setDialogOpen(dialog, false));
   downloadButton.addEventListener('click', () => {
+    if (!selected || installing) return;
     setDialogOpen(dialog, false);
-    postExternalUrl(releaseUrl);
+    if (!window.chrome?.webview) { postExternalUrl(selected.url); return; }
+    installing = true;
+    checkButton.disabled = true;
+    setStatus('正在下载安装包并校验，请稍候…');
+    window.chrome.webview.postMessage(serializeHostMessage({ type: 'installForkUpdate',
+      data: { tag: selected.tag, name: selected.name, sha256: selected.sha256 } }));
   });
+  onHostMessage('forkUpdateResponse', response => {
+    installing = false;
+    checkButton.disabled = false;
+    setStatus(response.message, response.ok ? 'success' : 'error');
+  });
+  mirrorButton.textContent = 'GitHub 发布页';
+  mirrorButton.hidden = false;
   mirrorButton.addEventListener('click', () => {
-    if (!mirrorUrl) {
-      return;
-    }
     setDialogOpen(dialog, false);
-    postExternalUrl(mirrorUrl);
+    postExternalUrl(selected?.releaseUrl ?? FORK_RELEASES);
   });
   dialog.addEventListener('click', (event) => {
     if (event.target === dialog) {
@@ -139,13 +153,8 @@ export function setupAboutSettings(): void {
     }
   });
 
-  checkButton.addEventListener('click', async () => {
-    const currentVersion = parseVersion(versionLabel.textContent ?? '');
-    if (!currentVersion) {
-      setStatus('无法识别当前版本', 'error');
-      return;
-    }
-
+  const check = async (automatic = false): Promise<void> => {
+    if (checkButton.disabled || installing) return;
     checkButton.disabled = true;
     checkButton.textContent = '正在检查…';
     setStatus('');
@@ -154,7 +163,7 @@ export function setupAboutSettings(): void {
     const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
     try {
-      const response = await fetch(`${UPDATE_MANIFEST_URL}?t=${Date.now()}`, {
+      const response = await fetch(FORK_API, {
         cache: 'no-store',
         signal: controller.signal
       });
@@ -162,31 +171,31 @@ export function setupAboutSettings(): void {
         throw new Error(`Update manifest returned ${response.status}`);
       }
 
-      const manifest = await response.json() as UpdateManifest;
-      const update = validateManifest(manifest, RELEASES_PAGE_URL);
-      if (!update) {
-        throw new Error('Invalid update manifest');
-      }
-
-      const latest = update.version;
-      if (compareVersions(latest, currentVersion) > 0) {
-        releaseUrl = update.releaseUrl;
-        mirrorUrl = mirrorDownloadUrl(update, DOWNLOAD_MIRROR_PREFIX);
-        mirrorButton.hidden = mirrorUrl === null;
-        dialogVersion.textContent = `v${latest.display}`;
-        renderInstallerTrust(dialogTrust, update);
-        setStatus(`发现新版本 v${latest.display}`, 'success');
+      selected = pickForkUpdate(await response.json(), versionLabel.textContent ?? '');
+      if (selected) {
+        dialogVersion.textContent = `v${selected.version}`;
+        renderInstallerTrust(dialogTrust, { version: parseVersion(selected.version)!, releaseUrl: selected.releaseUrl,
+          installerName: selected.name, installerSha256: selected.sha256, signed: selected.signed });
+        setStatus(`发现改版更新 v${selected.version}`, 'success');
         setDialogOpen(dialog, true);
       } else {
         setStatus('已是最新版本', 'success');
       }
     } catch (error) {
       console.warn('[about] update check failed:', error);
-      setStatus('检查失败，请稍后重试', 'error');
+      setStatus(automatic ? '自动检查失败，可稍后手动重试' : '检查失败，请确认能访问 GitHub 后重试', 'error');
     } finally {
       window.clearTimeout(timeout);
       checkButton.disabled = false;
       checkButton.textContent = '检查更新';
     }
-  });
+  };
+  checkButton.addEventListener('click', () => void check());
+  if (auto?.checked) {
+    let due = true;
+    try { due = Date.now() - Number(localStorage.getItem('zhuoyiwan.last-update-check') ?? 0) > 86400000; } catch { /* 本次启动检查一次。 */ }
+    if (due) void check(true).then(() => {
+      try { localStorage.setItem('zhuoyiwan.last-update-check', String(Date.now())); } catch { /* 不影响手动更新。 */ }
+    });
+  }
 }

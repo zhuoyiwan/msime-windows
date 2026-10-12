@@ -1,5 +1,33 @@
 [
   {
+    "name": "fork installer request",
+    "message": {"type": "installForkUpdate", "data": {"tag": "zhuoyiwan-20261013-r3", "name": "MetasequoiaIME_Setup_v0.7.1-zhuoyiwan-local-20261013-r9-unsigned.exe", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}},
+    "valid": true,
+    "surface": "settings",
+    "direction": "client"
+  },
+  {
+    "name": "fork installer digest must be string",
+    "message": {"type": "installForkUpdate", "data": {"tag": "zhuoyiwan-20261013-r3", "name": "installer.exe", "sha256": 1}},
+    "valid": false,
+    "surface": "settings",
+    "direction": "client"
+  },
+  {
+    "name": "fork installer request forbidden in candidate window",
+    "message": {"type": "installForkUpdate", "data": {"tag": "zhuoyiwan-20261013-r3", "name": "installer.exe", "sha256": "abc"}},
+    "valid": false,
+    "surface": "candidate",
+    "direction": "client"
+  },
+  {
+    "name": "fork update completion",
+    "message": {"type": "forkUpdateResponse", "ok": false, "message": "下载失败，可重试"},
+    "valid": true,
+    "surface": "settings",
+    "direction": "server"
+  },
+  {
     "name": "legacy settings",
     "message": {
       "type": "configRequest"
