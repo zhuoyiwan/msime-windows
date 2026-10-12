@@ -1,0 +1,141 @@
+name: zhuoyiwan three-platform release
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: zhuoyiwan/msime 的完整源码提交 SHA
+        required: true
+        type: string
+      release_tag:
+        description: 已暂存 Windows 与 Android 安装包的草稿 Release tag
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: zhuoyiwan-three-platform-release
+  cancel-in-progress: false
+
+jobs:
+  macos:
+    if: github.repository == 'zhuoyiwan/msime-windows'
+    runs-on: macos-15
+    timeout-minutes: 120
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+      - name: Check out fixed native macOS source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: zhuoyiwan/msime
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+
+      - name: Validate source and staged release
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
+          [[ "$RELEASE_TAG" =~ ^zhuoyiwan-[0-9]{8}-r[0-9]+$ ]]
+          [[ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" == true ]]
+          gh release download "$RELEASE_TAG" --pattern '*.exe' --pattern '*.apk' --pattern 'release-provenance.json' --dir staged
+          python3 - <<'PY'
+          import hashlib, json, pathlib, os
+          root = pathlib.Path('staged')
+          manifest = json.loads((root / 'release-provenance.json').read_text())
+          assert manifest['macos_source_commit'] == os.environ['SOURCE_SHA']
+          for platform in ('windows', 'android'):
+              item = manifest[platform]
+              path = root / item['asset']
+              assert path.is_file(), path
+              assert hashlib.sha256(path.read_bytes()).hexdigest() == item['sha256'], path
+          assert len(list(root.glob('*.exe'))) == 1
+          assert len(list(root.glob('*.apk'))) == 1
+          PY
+
+      - name: Install dependencies
+        run: |
+          brew install nlohmann-json
+          corepack enable
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          xcodebuild -version
+
+      - name: Cache pinned Sparkle archive
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/sparkle-archive
+          key: sparkle-2.9.6-${{ runner.os }}-${{ hashFiles('platforms/macos/CMakeLists.txt') }}
+
+      - name: Prepare pinned Sparkle
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/sparkle-archive"
+          archive="$RUNNER_TEMP/sparkle-archive/Sparkle-2.9.6.tar.xz"
+          if [[ ! -f "$archive" ]]; then
+            curl --fail --location --retry 3 https://github.com/sparkle-project/Sparkle/releases/download/2.9.6/Sparkle-2.9.6.tar.xz --output "$archive"
+          fi
+          printf '%s  %s\n' '52bf9e88cdd972fc0c81501377a880e90d47031bd8ca5462488f843e2609e192' "$archive" | shasum -a 256 --check
+          mkdir -p "$RUNNER_TEMP/sparkle"
+          tar -xJf "$archive" -C "$RUNNER_TEMP/sparkle"
+          test -d "$RUNNER_TEMP/sparkle/Sparkle.framework"
+          echo "MSIME_SPARKLE_ROOT=$RUNNER_TEMP/sparkle" >> "$GITHUB_ENV"
+
+      - name: Fetch locked gloss tables
+        run: |
+          python3 scripts/fetch_offline_glosses.py
+          python3 scripts/fetch_gloss_tables.py
+
+      - name: Build native universal DMG
+        run: |
+          set -euo pipefail
+          bash -n platforms/macos/scripts/install-local-fork.command
+          bash platforms/macos/package-release.sh --editions full
+          ctest --test-dir target/macos-release --no-tests=error --output-on-failure -R '^(bundle-contents|backend-library-load|update-controller|shortcut)$'
+
+      - name: Verify local certificate installation path
+        run: |
+          set -euo pipefail
+          dmg=(target/macos-package/dist/*.dmg)
+          [[ ${#dmg[@]} == 1 ]]
+          mount="$RUNNER_TEMP/msime-verify-mount"
+          mkdir -p "$mount"
+          hdiutil attach -quiet -nobrowse -readonly -mountpoint "$mount" "${dmg[0]}"
+          trap 'hdiutil detach -quiet "$mount" || true' EXIT
+          MSIME_LOCAL_VERIFY_ONLY=1 MSIME_LOCAL_APPLICATIONS_DIR="$RUNNER_TEMP/msime-local-applications" bash "$mount/安装 zhuoyiwan 版.command"
+          test -f "$mount/zhuoyiwan 本机安装说明.md"
+          codesign --verify --deep --strict "$RUNNER_TEMP/msime-local-applications/MSIME-zhuoyiwan.app"
+          echo '本机自签名路径通过；CI 未验收普通用户登录会话中的输入源注册和中文候选。' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Assemble all three verified packages
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          version="$(tr -d '[:space:]' < platforms/macos/version.txt)"
+          cp "target/macos-package/dist/msime-macos-${version}-universal.dmg" "release-assets/MetasequoiaIME_macOS_v${version}-zhuoyiwan-universal-local.dmg"
+          cp "target/macos-package/dist/msime-macos-${version}-dsym.zip" release-assets/
+          cp staged/*.exe staged/*.apk staged/release-provenance.json release-assets/
+          cp platforms/macos/LOCAL-FORK-INSTALL.md release-assets/MACOS-INSTALL.md
+          cd release-assets
+          shasum -a 256 -- *.exe *.apk *.dmg *.zip > SHA256SUMS.txt
+          shasum -a 256 -c SHA256SUMS.txt
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: zhuoyiwan-three-platforms
+          path: release-assets/
+          if-no-files-found: error
+
+      - name: Add macOS package to the draft Release
+        run: |
+          set -euo pipefail
+          [[ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" == true ]]
+          gh release upload "$RELEASE_TAG" release-assets/*.dmg release-assets/*.zip release-assets/SHA256SUMS.txt release-assets/MACOS-INSTALL.md --clobber
+          echo "三端产物已暂存到草稿 Release：$RELEASE_TAG。发布前需核对运行结果与资产校验和。" >> "$GITHUB_STEP_SUMMARY"
