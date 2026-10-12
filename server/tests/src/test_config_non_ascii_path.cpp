@@ -1249,6 +1249,35 @@ TEST_CASE(deepseek_thinking_levels_default_disabled_and_round_trip)
     fs::remove_all(unique_root, ec);
 }
 
+TEST_CASE(surface_theme_system_round_trips_independently)
+{
+    namespace fs = std::filesystem;
+    const fs::path unique_root = MakeProfileRoot() / L"独立主题";
+    const fs::path local_app_data = unique_root / L"本地";
+    const fs::path data_dir = local_app_data / L"metasequoiaime";
+    std::error_code ec;
+    fs::remove_all(unique_root, ec);
+    SeedTemplate(data_dir);
+    {
+        ScopedConfigLocation location(local_app_data);
+        InitImeConfig();
+        REQUIRE(SetConfiguredThemeMode("dark"));
+        REQUIRE(SetConfiguredThemeSettings("system"));
+        REQUIRE(SetConfiguredThemeCand("light"));
+        REQUIRE(SetConfiguredThemeFtb("follow"));
+        InitImeConfig();
+        REQUIRE_EQ(GetConfiguredThemeSettings(), std::string("system"));
+        REQUIRE_EQ(GetConfiguredThemeCand(), std::string("light"));
+        REQUIRE_EQ(ResolveConfiguredTheme(GetConfiguredThemeSettings()),
+                   std::string(IsSystemAppsLightTheme() ? "light" : "dark"));
+        REQUIRE_EQ(ResolveConfiguredTheme(GetConfiguredThemeCand()), std::string("light"));
+        REQUIRE_EQ(ResolveConfiguredTheme(GetConfiguredThemeFtb()), std::string("dark"));
+        REQUIRE(!SetConfiguredThemeSettings("invalid"));
+        REQUIRE_EQ(GetConfiguredThemeSettings(), std::string("system"));
+    }
+    fs::remove_all(unique_root, ec);
+}
+
 TEST_CASE(credential_protection_round_trips_and_rejects_foreign_ciphertext)
 {
     const std::string secret = "sk-测试-0123456789";

@@ -5,7 +5,7 @@ export function setCandidateSurfaceThemeListener(listener: ((theme: ResolvedThem
 }
 
 export type ThemeMode = 'dark' | 'light' | 'system';
-export type SurfaceTheme = 'follow' | 'dark' | 'light';
+export type SurfaceTheme = 'follow' | 'system' | 'dark' | 'light';
 export type ResolvedTheme = 'dark' | 'light';
 
 export type ThemeConfig = {
@@ -65,6 +65,7 @@ const THEME_MODE_LABELS: Record<ThemeMode, string> = {
 
 const SURFACE_THEME_LABELS: Record<SurfaceTheme, string> = {
   follow: '跟随全局',
+  system: '跟随系统',
   dark: '深色',
   light: '浅色'
 };
@@ -83,7 +84,7 @@ function normalizeThemeMode(value: string | undefined): ThemeMode {
 }
 
 function normalizeSurfaceTheme(value: string | undefined): SurfaceTheme {
-  if (value === 'light' || value === 'dark' || value === 'follow') {
+  if (value === 'light' || value === 'dark' || value === 'follow' || value === 'system') {
     return value;
   }
   return 'follow';
@@ -97,7 +98,7 @@ export function resolveTheme(mode: ThemeMode, surface: SurfaceTheme = 'follow'):
   if (surface === 'dark' || surface === 'light') {
     return surface;
   }
-  if (mode === 'system') {
+  if (surface === 'system' || mode === 'system') {
     return isSystemLightTheme() ? 'light' : 'dark';
   }
   return mode;
@@ -184,14 +185,8 @@ export function applyThemeConfig(config: ThemeConfig | undefined): void {
     const handwritingNow = normalizeSurfaceTheme(config?.theme_handwriting);
     const voiceNow = normalizeSurfaceTheme(config?.theme_voice);
     if (modeNow !== 'system' &&
-        settingsNow !== 'follow' &&
-        candNow !== 'follow' &&
-        ftbNow !== 'follow' &&
-        menuNow !== 'follow' &&
-        emojiNow !== 'follow' &&
-        screenKeyboardNow !== 'follow' &&
-        handwritingNow !== 'follow' &&
-        voiceNow !== 'follow') {
+        ![settingsNow, candNow, ftbNow, menuNow, emojiNow, screenKeyboardNow,
+          handwritingNow, voiceNow].includes('system')) {
       return;
     }
     applyThemeConfig(config);
@@ -299,6 +294,7 @@ function readSurfaceFromUi(menuId: string, btnId: string): SurfaceTheme {
   const label = document.querySelector(`#${btnId} span`)?.textContent?.trim();
   if (label === '浅色') return 'light';
   if (label === '深色') return 'dark';
+  if (label === '跟随系统') return 'system';
   const selected = document.querySelector<HTMLElement>(`#${menuId} .dropdown-item.active`);
   return normalizeSurfaceTheme(selected?.dataset.value);
 }

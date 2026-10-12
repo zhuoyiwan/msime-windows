@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { applyThemeConfig, applyWallpaperPalette, reapplyThemeConfig } from './theme';
+import { applyThemeConfig, applyWallpaperPalette, reapplyThemeConfig, resolveTheme } from './theme';
 
 class FakeImage {
   src = '/assets/softkbd.png';
@@ -33,6 +33,27 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+it('follows the device independently of the global and other surface modes', () => {
+  expect(resolveTheme('dark', 'system')).toBe('light');
+  expect(resolveTheme('dark', 'follow')).toBe('dark');
+  expect(resolveTheme('system', 'dark')).toBe('dark');
+  applyThemeConfig({ theme_mode: 'dark', theme_settings: 'system', theme_cand: 'dark' });
+  expect(document.documentElement.setAttribute).toHaveBeenCalledWith('data-theme', 'light');
+});
+
+it('reapplies an independent system surface when the device mode changes', () => {
+  const media = { matches: true, onchange: null as null | (() => void) };
+  vi.stubGlobal('window', { matchMedia: () => media });
+  vi.resetModules();
+  // 单独重新加载模块，让监听器绑定这次测试的设备主题来源。
+  return import('./theme').then(module => {
+    module.applyThemeConfig({ theme_mode: 'dark', theme_settings: 'system', theme_cand: 'light' });
+    media.matches = false;
+    media.onchange?.();
+    expect(document.documentElement.setAttribute).toHaveBeenLastCalledWith('data-theme', 'dark');
+  });
 });
 
 it('themes a preview page that loads after the snapshot was applied', async () => {

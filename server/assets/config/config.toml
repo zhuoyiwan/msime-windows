@@ -159,7 +159,7 @@ ui_backend = "d2d"
 # 设置窗口关闭后在后台驻留多久再退出，驻留期间重新打开无需冷启动
 # 可选："off"（立即退出）, "1m", "5m", "10m", "30m", "60m", "forever"（一直驻留）
 settings_window_linger = "off"
-# 分表面主题，可选："follow", "dark", "light"（follow = 跟随 theme_mode）
+# 分表面主题，可选："follow", "system", "dark", "light"（follow = 跟随 theme_mode，system = 独立跟随系统）
 theme_settings = "follow"
 theme_cand = "follow"
 theme_ftb = "follow"

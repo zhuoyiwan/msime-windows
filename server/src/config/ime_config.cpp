@@ -710,7 +710,7 @@ bool LoadImeConfig()
                 g_theme_mode = "dark";
         }
         auto normalize_surface = [](const std::string &value) -> std::string {
-            if (value == "light" || value == "dark" || value == "follow")
+            if (value == "light" || value == "dark" || value == "follow" || value == "system")
                 return value;
             return "follow";
         };

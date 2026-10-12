@@ -2179,6 +2179,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_pa
 {
     switch (message)
     {
+    case WM_SETTINGCHANGE:
+        // 软件界面可独立跟随系统，设备切换主题时同时刷新原生边框和页面配置。
+        if (l_param && lstrcmpiW(reinterpret_cast<LPCWSTR>(l_param), L"ImmersiveColorSet") == 0)
+            PostConfig();
+        break;
     case kActivateExistingWindow:
         ActivateWindow(hwnd);
         return 0;

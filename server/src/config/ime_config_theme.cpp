@@ -32,7 +32,7 @@ std::string NormalizeThemeMode(const std::string &mode)
 
 std::string NormalizeSurfaceTheme(const std::string &theme)
 {
-    if (theme == "light" || theme == "dark" || theme == "follow")
+    if (theme == "light" || theme == "dark" || theme == "follow" || theme == "system")
         return theme;
     return "follow";
 }
@@ -40,7 +40,7 @@ std::string NormalizeSurfaceTheme(const std::string &theme)
 bool SetSurfaceThemeValue(const char *key, const std::string &theme, std::string &target)
 {
     const std::string normalized = NormalizeSurfaceTheme(theme);
-    if (theme != "light" && theme != "dark" && theme != "follow")
+    if (theme != "light" && theme != "dark" && theme != "follow" && theme != "system")
         return false;
     if (!WriteConfiguredValue("appearance", key, EscapeTomlBasicString(normalized)))
         return false;
@@ -70,6 +70,8 @@ std::string ResolveConfiguredTheme(const std::string &surface_theme)
     const std::string surface = NormalizeSurfaceTheme(surface_theme);
     if (surface == "light" || surface == "dark")
         return surface;
+    if (surface == "system")
+        return IsSystemAppsLightTheme() ? "light" : "dark";
     if (g_theme_mode == "light")
         return "light";
     if (g_theme_mode == "system" || g_theme_mode == "auto")
