@@ -28,7 +28,8 @@ $candidates = [System.Collections.Generic.List[string]]::new()
 foreach ($key in @(
         'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 6_is1',
         'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 6_is1')) {
-    $location = (Get-ItemProperty -Path $key -Name 'InstallLocation' -ErrorAction SilentlyContinue).InstallLocation
+    # 打包入口启用 StrictMode；注册表键缺席时不能再解引用空对象的属性。
+    $location = Get-ItemPropertyValue -LiteralPath $key -Name 'InstallLocation' -ErrorAction SilentlyContinue
     if ($location) { $candidates.Add($location.TrimEnd('\')) }
 }
 foreach ($base in @(${env:ProgramFiles(x86)}, $env:ProgramFiles)) {
