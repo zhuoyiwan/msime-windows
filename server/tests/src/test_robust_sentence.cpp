@@ -27,6 +27,11 @@ TEST_CASE(RobustSentenceShippedDictionaryCorrections)
             << "ms\n";
         REQUIRE(std::any_of(rows.begin(), rows.begin() + (std::min)(rows.size(), size_t{6}),
                             [](const auto &row) { return row.word == "我想去上课"; }));
+        const auto selected =
+            std::find_if(rows.begin(), rows.end(), [](const auto &row) { return row.word == "我想去上课"; });
+        std::string consumed = selected->pinyin;
+        consumed.erase(std::remove(consumed.begin(), consumed.end(), '\''), consumed.end());
+        REQUIRE(consumed == raw);
     }
     const std::string raw = "wixbwozhdiwnxbyak";
     const auto rows = dictionary.query(raw, "", all);

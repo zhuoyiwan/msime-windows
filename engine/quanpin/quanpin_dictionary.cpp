@@ -997,7 +997,10 @@ std::vector<WordItem> QuanpinDictionary::query_series(const std::string &raw_inp
                         rows.push_back({item.key, item.value, item.weight});
                 return rows;
             };
-            quanpin::merge_lattice_candidates(result, segments, lookup, segmentation.empty() ? raw_input : segmentation,
+            // 末尾补全整句消费原串，纠错切分少掉的字母不能留在输入框。
+            const bool tail_completion = !quanpin::is_complete_pinyin_input(segments.back());
+            quanpin::merge_lattice_candidates(result, segments, lookup,
+                                              segmentation.empty() || tail_completion ? raw_input : segmentation,
                                               lattice_options, neural_rerankers);
         }
     }
