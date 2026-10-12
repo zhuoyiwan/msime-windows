@@ -10,6 +10,7 @@
 #include "utils/common_utils.h"
 #include "utils/ime_utils.h"
 #include "utils/window_utils.h"
+#include "utils/wallpaper_palette.h"
 #include "webview2/windows_webview2.h"
 #include "window/candidate_skin_palette.h"
 #include "window/candidate_wheel_paging.h"
@@ -436,6 +437,9 @@ void CandidatePresenter::ApplySkin()
                 << GetConfiguredCandidateWindowPreeditFontSize() << '|' << GetConfiguredCandidateWindowLayout() << '|'
                 << GetConfiguredCandidateTextColor() << '|' << GetConfiguredCandidateWindowPreeditStyle();
     fingerprint << '|' << GetConfiguredCandidateEnglishFont();
+    fingerprint << '|' << GetConfiguredWallpaperColors();
+    if (GetConfiguredWallpaperColors())
+        fingerprint << '|' << GetWallpaperSeed();
     // 同一个外部皮肤的 skin.toml 或图片改了，只有强制重载能看出来；带上重载代数让 D2D 也重读 manifest。
     fingerprint << '|' << GetCandidateSkinReloadRevision();
     for (const auto &font : GetConfiguredCandidateFallbackFonts())
@@ -709,8 +713,24 @@ void CandidatePresenter::ApplySkin()
     }
     const CandidateSkinCatalog::CandidateColors *packageColors =
         package ? &(candLight ? package->light : package->dark) : nullptr;
-    const CandidateSkinPalette palette = ResolveCandidateSkinPalette(
-        skinId, candLight, GetConfiguredCandidateTextColor(), packageColors, package ? package->base : std::string{});
+    CandidateSkinPalette palette = ResolveCandidateSkinPalette(skinId, candLight, GetConfiguredCandidateTextColor(),
+                                                               packageColors, package ? package->base : std::string{});
+    if (GetConfiguredWallpaperColors())
+    {
+        const auto wallpaper = GetWallpaperPalette(candLight);
+        palette.surface = ColorFromRgb(wallpaper.surface);
+        palette.border = ColorFromRgb(wallpaper.border);
+        palette.text = ColorFromRgb(wallpaper.text);
+        palette.candidateText = palette.preeditText = palette.text;
+        tokens.accent = ColorFromRgb(wallpaper.accent);
+        tokens.number = ColorFromRgb(wallpaper.secondary);
+        tokens.selected = tokens.hover = ColorFromRgb(wallpaper.selected);
+        tokens.selectedBar = tokens.accent;
+        tokens.menuFill = ColorFromRgb(wallpaper.card);
+        tokens.menuBorder = palette.border;
+        tokens.menuText = palette.text;
+        tokens.menuHover = tokens.selected;
+    }
     tokens.surface = palette.surface;
     tokens.border = palette.border;
     tokens.text = palette.text;

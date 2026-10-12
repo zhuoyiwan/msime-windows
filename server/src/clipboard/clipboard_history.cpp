@@ -10,8 +10,10 @@
 #include <cctype>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <mutex>
+#include <optional>
 #include <sstream>
 #include <string>
 
@@ -22,6 +24,8 @@ constexpr wchar_t kStoreMutexName[] = L"Local\\MetasequoiaIme.ClipboardHistory";
 constexpr wchar_t kMonitorClassName[] = L"MetasequoiaIme.ClipboardListener";
 constexpr UINT_PTR kCaptureTimerId = 1;
 constexpr UINT kCaptureDebounceMs = 80;
+constexpr UINT kRemoteClipboardMessage = WM_APP + 31;
+constexpr UINT_PTR kRemoteClipboardTimer = 2;
 
 class NamedMutex
 {
@@ -275,7 +279,7 @@ struct MonitorState
 {
     std::mutex mutex;
     HANDLE thread = nullptr;
-    HWND hwnd = nullptr;
+    std::atomic<HWND> hwnd{nullptr};
     std::atomic<bool> running{false};
     DWORD lastSequence = 0;
 };
@@ -284,6 +288,59 @@ MonitorState g_monitor;
 std::atomic<bool> g_monitor_allowed{true};
 std::mutex g_observer_mutex;
 std::function<void(const ClipboardRecord::Record &)> g_capture_observer;
+struct RemoteClipboard
+{
+    std::wstring text;
+    DWORD sequence;
+    std::chrono::steady_clock::time_point expires;
+};
+std::mutex g_remote_mutex;
+std::optional<RemoteClipboard> g_remote;
+
+void ApplyPendingRemote(HWND hwnd)
+{
+    std::lock_guard<std::mutex> lock(g_remote_mutex);
+    if (!g_remote)
+        return;
+    if (!ClipboardHistory::IsSyncEnabled() || GetClipboardSequenceNumber() != g_remote->sequence ||
+        std::chrono::steady_clock::now() >= g_remote->expires)
+    {
+        g_remote.reset();
+        KillTimer(hwnd, kRemoteClipboardTimer);
+        return;
+    }
+    if (!OpenClipboard(hwnd))
+    {
+        SetTimer(hwnd, kRemoteClipboardTimer, 50, nullptr);
+        return;
+    }
+    // 打开后再次核对，不能覆盖网络事件到达之后用户新复制的内容。
+    if (GetClipboardSequenceNumber() == g_remote->sequence)
+    {
+        const auto bytes = (g_remote->text.size() + 1) * sizeof(wchar_t);
+        HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, bytes);
+        if (memory)
+        {
+            void *buffer = GlobalLock(memory);
+            if (buffer)
+            {
+                memcpy(buffer, g_remote->text.c_str(), bytes);
+                GlobalUnlock(memory);
+                if (EmptyClipboard() && SetClipboardData(CF_UNICODETEXT, memory))
+                {
+                    memory = nullptr;
+                    // 仍持有剪贴板锁时记录最终写入序号，避免把关闭后用户的新复制误记为远端写入。
+                    g_monitor.lastSequence = GetClipboardSequenceNumber();
+                }
+            }
+            if (memory)
+                GlobalFree(memory);
+        }
+    }
+    CloseClipboard();
+    g_remote.reset();
+    KillTimer(hwnd, kRemoteClipboardTimer);
+}
 
 void CaptureClipboardText(HWND hwnd)
 {
@@ -313,17 +370,25 @@ void CaptureClipboardText(HWND hwnd)
 
     text = NormalizeClipboardText(std::move(text));
     if (!text.empty())
-        ClipboardHistory::AddText(std::move(text));
+        ClipboardHistory::AddText(std::move(text), true);
 }
 
 LRESULT CALLBACK MonitorWndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
     switch (message)
     {
+    case kRemoteClipboardMessage:
+        ApplyPendingRemote(hwnd);
+        return 0;
     case WM_CLIPBOARDUPDATE:
         SetTimer(hwnd, kCaptureTimerId, kCaptureDebounceMs, nullptr);
         return 0;
     case WM_TIMER:
+        if (wParam == kRemoteClipboardTimer)
+        {
+            ApplyPendingRemote(hwnd);
+            return 0;
+        }
         if (wParam == kCaptureTimerId)
         {
             KillTimer(hwnd, kCaptureTimerId);
@@ -468,7 +533,7 @@ ClipboardSync::ImportResult ClipboardHistory::ImportRecord(const ClipboardRecord
     return result;
 }
 
-bool ClipboardHistory::AddText(std::wstring text)
+bool ClipboardHistory::AddText(std::wstring text, bool fresh_copy)
 {
     text = NormalizeClipboardText(std::move(text));
     if (text.empty() || !IsEnabled())
@@ -486,7 +551,7 @@ bool ClipboardHistory::AddText(std::wstring text)
         // Pairing codes are credentials. Copying one from Settings must not publish it to other peers.
         if (utf8.find("msime1:") != std::string::npos)
             return false;
-        if (!store.records.empty() && store.records.front().text == utf8)
+        if (!fresh_copy && !store.records.empty() && store.records.front().text == utf8)
         {
             if (store.migrated_from_v1)
                 WriteStoreUnlocked(store);
@@ -631,6 +696,19 @@ void ClipboardMonitor::Start()
         g_monitor.running = false;
 }
 
+void ClipboardMonitor::ApplyRemoteText(std::wstring text)
+{
+    if (text.empty() || !ClipboardHistory::IsSyncEnabled())
+        return;
+    std::lock_guard<std::mutex> lifecycle(g_monitor.mutex);
+    if (!g_monitor.running || !g_monitor.hwnd)
+        return;
+    std::lock_guard<std::mutex> lock(g_remote_mutex);
+    g_remote = RemoteClipboard{std::move(text), GetClipboardSequenceNumber(),
+                               std::chrono::steady_clock::now() + std::chrono::seconds(2)};
+    PostMessageW(g_monitor.hwnd, kRemoteClipboardMessage, 0, 0);
+}
+
 void ClipboardMonitor::DisableForThisProcess()
 {
     g_monitor_allowed = false;
@@ -640,6 +718,10 @@ void ClipboardMonitor::DisableForThisProcess()
 void ClipboardMonitor::Stop()
 {
     std::lock_guard<std::mutex> lock(g_monitor.mutex);
+    {
+        std::lock_guard<std::mutex> remote(g_remote_mutex);
+        g_remote.reset();
+    }
     HANDLE thread = g_monitor.thread;
     if (!thread && !g_monitor.running)
         return;

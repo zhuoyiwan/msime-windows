@@ -3,6 +3,7 @@
 #include "local_query_result.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -10,6 +11,9 @@
 namespace metasequoia::local_modes
 {
 using QuickPhraseQueryResult = LocalQueryResult;
+
+// 已保存数字编码的首位掩码，不传出词条正文。
+std::uint16_t quick_phrase_numeric_starts();
 
 // K 模式：按编码前缀匹配，权重降序。
 QuickPhraseQueryResult query_quick_phrases(const std::string &prefix, int limit = 100);

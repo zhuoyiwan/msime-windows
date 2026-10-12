@@ -3,6 +3,7 @@
 #endif
 #include "ipc/ipc.h"
 #include "ipc/input_key_policy.h"
+#include "engine/contracts/prefix_completion.h"
 #include "statistics/stats_pipe.h"
 #include "tests/includes/test_framework.h"
 
@@ -63,7 +64,8 @@ TEST_CASE(ipc_pipe_ready_is_a_distinct_server_reply)
     REQUIRE_EQ(Global::DataFromServerMsgTypeToTsfWorkerThread::MidSentenceHelpcodeUppercaseChanged, 31u);
     REQUIRE_EQ(Global::DataFromServerMsgTypeToTsfWorkerThread::VModeChanged, 32u);
     REQUIRE_EQ(Global::DataFromServerMsgTypeToTsfWorkerThread::TrilingualCycleChanged, 33u);
-    REQUIRE_EQ(Global::DataFromServerMsgTypeToTsfWorkerThread::MaxKnown, 33u);
+    REQUIRE_EQ(Global::DataFromServerMsgTypeToTsfWorkerThread::PrefixCompletionStartsChanged, 34u);
+    REQUIRE_EQ(Global::DataFromServerMsgTypeToTsfWorkerThread::MaxKnown, 34u);
     REQUIRE(Global::DataFromServerMsgTypeToTsfWorkerThread::FocusSessionReady >
             Global::DataFromServerMsgTypeToTsfWorkerThread::PagingCommaPeriodChanged);
     REQUIRE(Global::DataFromServerMsgTypeToTsfWorkerThread::PipeReady >
@@ -115,7 +117,24 @@ TEST_CASE(ipc_pipe_ready_is_a_distinct_server_reply)
     REQUIRE(Global::DataFromServerMsgTypeToTsfWorkerThread::TrilingualCycleChanged >
             Global::DataFromServerMsgTypeToTsfWorkerThread::VModeChanged);
     REQUIRE_EQ(Global::DataFromServerMsgTypeToTsfWorkerThread::MaxKnown,
-               Global::DataFromServerMsgTypeToTsfWorkerThread::TrilingualCycleChanged);
+               Global::DataFromServerMsgTypeToTsfWorkerThread::PrefixCompletionStartsChanged);
+}
+
+TEST_CASE(prefix_completion_numeric_keys_continue_composing_instead_of_selecting)
+{
+    using namespace FanyImePrefixCompletion;
+    REQUIRE(Accepts(static_cast<const char *>(nullptr), 0, 0, '1', 1u << 1));
+    REQUIRE(!Accepts(static_cast<const char *>(nullptr), 0, 0, '2', 1u << 1));
+    REQUIRE(Accepts("138", 3, 3, '0', 0));
+    REQUIRE(Accepts("138", 3, 1, '0', 0));
+    REQUIRE(!Accepts("ni", 2, 2, '1', 1u << 1));
+    REQUIRE(!Accepts("138", 3, 4, '1', 1u << 1));
+    REQUIRE(!Accepts("138", 3, 3, '!', 1u << 1));
+    REQUIRE(ValidStarts(L"0100000000"));
+    REQUIRE_EQ(ParseStarts(L"0100000000"), 2u);
+    REQUIRE(!ValidStarts(L"1"));
+    REQUIRE(!ValidStarts(L"010000000x"));
+    REQUIRE(!ValidStarts(L"01000000000"));
 }
 
 TEST_CASE(ipc_client_suspension_is_a_distinct_nonterminal_route_reset)

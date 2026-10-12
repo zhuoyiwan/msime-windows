@@ -331,14 +331,19 @@ TEST_CASE(clipboard_service_publishes_fresh_capture_and_imports_remote_history)
     REQUIRE(remote.Open("127.0.0.1", 0));
     std::atomic<bool> stop{false};
     std::atomic<unsigned> received{0}, unexpected{0};
+    std::atomic<unsigned> phase{0}, retries{0};
     ClipboardSync::TlsCallbacks callbacks{
         [&](const auto &id) -> std::optional<std::string> {
             return id == key.key_id ? std::optional<std::string>(key.secret) : std::nullopt;
         },
         [&](const auto &id, const auto &device) { return id == key.key_id && device == local; },
-        [](const auto &) {
+        [&](const auto &) {
+            const auto current = phase.load();
+            if (current == 2)
+                ++retries;
             return std::vector<MsimeClipboardSync::Record>{
-                {"remote-id", "远端服务记录 😀", ClipboardRecord::HashText("远端服务记录 😀"), "remote", 42}};
+                {current == 1 ? "remote-id-new" : "remote-id", "远端服务记录 😀",
+                 ClipboardRecord::HashText("远端服务记录 😀"), "remote", 42}};
         },
         [&](const auto &record, const auto &device) {
             if (device != local || record.text != "本机服务记录 😀")
@@ -365,11 +370,30 @@ TEST_CASE(clipboard_service_publishes_fresh_capture_and_imports_remote_history)
             break;
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
+    phase = 1;
+    bool recopied = false;
+    const auto recopy_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (std::chrono::steady_clock::now() < recopy_deadline)
+    {
+        for (const auto &record : ClipboardHistory::LoadRecords())
+            recopied = recopied || record.id == "remote-id-new";
+        if (recopied)
+            break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    phase = 2;
+    const auto retry_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (std::chrono::steady_clock::now() < retry_deadline && retries < 2)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     ClipboardSync::StopLanService();
     stop = true;
     host.join();
     REQUIRE(captured);
     REQUIRE(imported);
+    REQUIRE(recopied && retries >= 2);
+    const auto records = ClipboardHistory::LoadRecords();
+    REQUIRE(!records.empty());
+    REQUIRE_EQ(records.front().id, std::string("remote-id-new"));
     REQUIRE(received.load() > 0);
     REQUIRE_EQ(unexpected.load(), 0u); // old history and imports never become outbound captures
 }

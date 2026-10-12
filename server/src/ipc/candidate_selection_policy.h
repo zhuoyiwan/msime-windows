@@ -1,4 +1,5 @@
 #pragma once
+#include "engine/core/expressive_candidate_order.h"
 
 #include "engine/core/word_item.h"
 #include "engine/local_modes/date_time_query.h"
@@ -134,8 +135,7 @@ inline std::optional<size_t> SlottedEnglishIndex(const std::vector<WordItem> &it
 // Keep asynchronous mixed-input candidates in stable priority slots regardless
 // of the order in which their workers finish. English keeps its legacy slotting
 // (promoted ahead of AI unless a cloud result forces it behind cloud+AI), and
-// emoji/kaomoji are placed at the end of the candidate list so they do not
-// displace normal Chinese candidates:
+// 颜文字和没有对应词的 emoji 保留在末尾；有目录关键词的 emoji 在最终排序后紧跟对应词。
 //   no cloud:         Chinese..., English, AI, ..., emoji, kaomoji
 //   cloud:            Chinese..., cloud, AI, English, ..., emoji, kaomoji
 //   cloud only:       Chinese..., cloud, English, ..., emoji, kaomoji
@@ -275,5 +275,6 @@ inline void NormalizeMixedCandidateOrder(std::vector<WordItem> &items, size_t lo
         [](const WordItem &left, const WordItem &right) { return left.fixed_position < right.fixed_position; });
     for (auto &candidate : fixed_english_candidates)
         insert_at(static_cast<size_t>(candidate.fixed_position - 1), std::move(candidate));
+    metasequoia::anchor_emoji_candidates(items);
 }
 } // namespace FanyImeIpc

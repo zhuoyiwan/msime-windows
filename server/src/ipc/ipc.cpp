@@ -17,6 +17,7 @@
 #include <utility>
 #include <vector>
 #include "ipc.h"
+#include "config/prefix_completion.h"
 #include "engine/contracts/ipc_negotiation.h"
 #include "ipc/active_client_state.h"
 #include "ipc/event_listener.h"
@@ -1725,6 +1726,9 @@ void SendToTsfWorkerThreadViaNamedpipe(UINT msg_type, const std::wstring &pipeDa
 
 void BroadcastConfiguredInputModeState(uint64_t excluded_input_mode_client_id)
 {
+    BroadcastToTsfWorkerThreadViaNamedpipe(
+        Global::DataFromServerMsgTypeToTsfWorkerThread::PrefixCompletionStartsChanged,
+        FormatPrefixCompletionWorkerPayload());
     BroadcastToTsfWorkerThreadViaNamedpipe(Global::DataFromServerMsgTypeToTsfWorkerThread::InputModeChanged,
                                            GetActiveInputMode() == "japanese" ? L"1" : L"0",
                                            excluded_input_mode_client_id);

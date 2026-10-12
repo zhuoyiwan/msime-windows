@@ -29,15 +29,16 @@ using Statement = std::unique_ptr<sqlite3_stmt, StatementCloser>;
 
 bool valid_code(const std::string &code)
 {
-    return !code.empty() && std::all_of(code.begin(), code.end(),
-                                        [](unsigned char character) { return character >= 'a' && character <= 'z'; });
+    return !code.empty() && code.size() <= 64 &&
+           (std::all_of(code.begin(), code.end(), [](unsigned char ch) { return ch >= 'a' && ch <= 'z'; }) ||
+            std::all_of(code.begin(), code.end(), [](unsigned char ch) { return ch >= '0' && ch <= '9'; }));
 }
 
 QuickPhraseQueryResult query_failure(const char *diagnostic)
 {
     return {{}, std::string(diagnostic)};
 }
-// 前缀查询给 K 模式用，精确查询给全拼/双拼混排用；上界拼 0x7f 让 key 落在 [code, code+0x7f)。
+// 前缀查询用于 K 模式和普通混排；上界拼 0x7f 让 key 落在 [code, code+0x7f)。
 QuickPhraseQueryResult query_quick_phrase_rows(const std::string &code, const std::filesystem::path &database_path,
                                                int limit, bool exact)
 {
@@ -84,7 +85,7 @@ QuickPhraseQueryResult query_quick_phrase_rows(const std::string &code, const st
     {
         const auto *key = reinterpret_cast<const char *>(sqlite3_column_text(statement.get(), 0));
         const auto *value = reinterpret_cast<const char *>(sqlite3_column_text(statement.get(), 1));
-        if (key != nullptr && value != nullptr)
+        if (key != nullptr && value != nullptr && valid_code(key))
         {
             result.candidates.emplace_back(key, value, sqlite3_column_int64(statement.get(), 2),
                                            CandidateSource::QuickPhrase);
@@ -97,6 +98,15 @@ QuickPhraseQueryResult query_quick_phrase_rows(const std::string &code, const st
     return result;
 }
 } // namespace
+
+std::uint16_t quick_phrase_numeric_starts()
+{
+    std::uint16_t mask = 0;
+    for (unsigned digit = 0; digit < 10; ++digit)
+        if (!query_quick_phrases(std::string(1, static_cast<char>('0' + digit)), 1).candidates.empty())
+            mask |= 1u << digit;
+    return mask;
+}
 
 QuickPhraseQueryResult query_quick_phrases(const std::string &prefix, int limit)
 {

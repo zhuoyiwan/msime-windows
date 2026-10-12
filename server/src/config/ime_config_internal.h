@@ -235,6 +235,7 @@ extern bool g_candidate_fixed_badge;
 extern std::string g_candidate_fixed_badge_style;
 extern std::string g_settings_window_linger;
 extern std::string g_theme_mode;
+extern bool g_wallpaper_colors;
 extern std::string g_theme_settings;
 extern std::string g_theme_cand;
 extern std::string g_theme_ftb;

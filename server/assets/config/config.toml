@@ -58,7 +58,8 @@ cn_en_mixed_input_min_chars = 2
 # 在竖排候选窗口中显示中英文互译（每项最多两个简短释义）
 candidate_translations = true
 # 中文输入状态下显示 emoji 前缀候选（排在候选项列表最后）
-emoji_mixed_input = false
+emoji_mixed_input = true
+emoji_candidates_revision = 0
 # 中文输入状态下显示颜文字前缀候选（排在 emoji 之后）
 kaomoji_mixed_input = false
 # 云候选
@@ -151,6 +152,7 @@ linear_step = 1
 [appearance]
 # 主题模式，可选："dark", "light", "system"
 theme_mode = "system"
+wallpaper_colors = false
 # 候选窗 / 悬浮工具栏 / 托盘菜单渲染，可选："d2d", "webview2"
 # 更改后需重启输入法进程生效
 ui_backend = "d2d"
@@ -477,7 +479,7 @@ clipboard_history = false # 表情面板剪贴板历史，仅记录文本；关�
 clipboard_lan_sync = false # 局域网剪贴板共享；还需开启历史并在设置页配对
 study_english_word = "false" # 背单词功能，开启后可以在候选项旁边显示英文
 quick_phrase = true # Shift+K 进入快捷短语模式
-quick_phrase_candidates = false # 全拼/双拼下把编码精确匹配的快捷短语混进候选，排在固定位置候选之后的首位
+quick_phrase_candidates = false # 全拼/双拼下按字母编码前缀补全快捷短语；数字编码至少 3 位，保留原样数字首选
 quick_phrase_frequency = true # 快捷短语参与调频：常越过它选别的候选时整组后退，最多退到首页末位
 # 候选混输总开关：关闭后英文（general.cn_en_mixed_input）、emoji（general.emoji_mixed_input）、
 # 颜文字（general.kaomoji_mixed_input）、快捷短语（quick_phrase_candidates）、日期时间（date_time_candidates）

@@ -32,6 +32,8 @@ function applyConfigData(data: Record<string, any>, target?: string): void {
         data?.appearance?.tsf_preedit_style,
         {
           theme_mode: data?.appearance?.theme_mode,
+          wallpaper_colors: data?.appearance?.wallpaper_colors,
+          wallpaper_palette: data?.appearance?.wallpaper_palette,
           theme_settings: data?.appearance?.theme_settings,
           theme_cand: data?.appearance?.theme_cand,
           theme_ftb: data?.appearance?.theme_ftb,

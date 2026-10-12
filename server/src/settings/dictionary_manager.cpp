@@ -438,8 +438,7 @@ bool InsertChineseWord(sqlite3 *db, const quanpin::Segments &segments, const std
 
 // 拼音带码、纯汉字、英文、五笔四条导入路径此前各存一份逐字相同的 40 行汇总块。
 // 收口到这里，避免加「纯汉字导入五笔」时变成第四份副本。
-// ImportQuickPhrase 刻意留在外面：它那份副本不调 NotifyImeServerClearDictCache，
-// 收编进来会凭空给快捷短语导入加上清缓存通知。改它要先确认这个差异是有意还是漏的。
+// 快捷短语保留独立汇总；写入后通知 Server 刷新数字前缀的按键预判。
 json::object SummarizeImport(int inserted, int skipped, int failed, const std::vector<std::string> &error_details)
 {
     if (inserted == 0 && skipped == 0 && failed == 0)
@@ -1292,8 +1291,9 @@ json::object ImportQuickPhrase(const json::object &request)
         return value.substr(begin, end - begin + 1);
     };
     const auto valid_code = [](const std::string &value) {
-        return !value.empty() &&
-               std::all_of(value.begin(), value.end(), [](unsigned char ch) { return ch >= 'a' && ch <= 'z'; });
+        return !value.empty() && value.size() <= 64 &&
+               (std::all_of(value.begin(), value.end(), [](unsigned char ch) { return ch >= 'a' && ch <= 'z'; }) ||
+                std::all_of(value.begin(), value.end(), [](unsigned char ch) { return ch >= '0' && ch <= '9'; }));
     };
     int inserted = 0;
     int skipped = 0;
@@ -1339,7 +1339,7 @@ json::object ImportQuickPhrase(const json::object &request)
                        [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
         if (!valid_code(code) || phrase.empty())
         {
-            append_error(line_no, "编码只能包含英文字母，短语不能为空");
+            append_error(line_no, "编码须为最多 64 位的字母缩写或纯数字，短语不能为空");
             continue;
         }
         if (!Validation::QuickPhraseFitsNamedPipe(phrase))
@@ -1388,6 +1388,8 @@ json::object ImportQuickPhrase(const json::object &request)
         ++inserted;
     }
     sqlite3_exec(db.get(), "COMMIT", nullptr, nullptr, nullptr);
+    if (inserted > 0)
+        NotifyImeServerClearDictCache();
 
     if (inserted == 0 && skipped == 0 && failed == 0)
         return Result(false, "文件中没有可导入的词条");
@@ -1432,8 +1434,9 @@ json::object HandleQuickPhrase(const json::object &request)
     std::transform(code.begin(), code.end(), code.begin(),
                    [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
     const auto valid_code = [](const std::string &value) {
-        return !value.empty() &&
-               std::all_of(value.begin(), value.end(), [](unsigned char ch) { return ch >= 'a' && ch <= 'z'; });
+        return !value.empty() && value.size() <= 64 &&
+               (std::all_of(value.begin(), value.end(), [](unsigned char ch) { return ch >= 'a' && ch <= 'z'; }) ||
+                std::all_of(value.begin(), value.end(), [](unsigned char ch) { return ch >= '0' && ch <= '9'; }));
     };
     std::string error;
     Db db = OpenDatabase("msime.db", error);
@@ -1443,7 +1446,7 @@ json::object HandleQuickPhrase(const json::object &request)
     if (action == "query")
     {
         if (!code.empty() && !valid_code(code))
-            return Result(false, "编码只能包含英文字母");
+            return Result(false, "编码须为最多 64 位的字母缩写或纯数字");
         Stmt stmt = Prepare(db.get(),
                             "SELECT key,value,weight FROM quick_parases WHERE key LIKE ?1 "
                             "ORDER BY weight DESC,key,value" +
@@ -1455,7 +1458,7 @@ json::object HandleQuickPhrase(const json::object &request)
     }
 
     if (!valid_code(code) || phrase.empty())
-        return Result(false, "编码只能包含英文字母，短语不能为空");
+        return Result(false, "编码须为最多 64 位的字母缩写或纯数字，短语不能为空");
     if ((action == "create" || action == "update") && !Validation::QuickPhraseFitsNamedPipe(phrase))
         return Result(false, "快捷短语不能超过 199 个 wchar 字符");
     const std::string old_code = StringValue(request, "oldCode");
@@ -1509,6 +1512,8 @@ json::object HandleQuickPhrase(const json::object &request)
                                                      weight);
         }
     }
+    if (ok)
+        NotifyImeServerClearDictCache();
     const char *label = action == "create" ? "新增" : action == "update" ? "修改" : "删除";
     return Result(ok, ok ? std::string("快捷短语") + label + "成功"
                          : std::string(label) + "失败：" + sqlite3_errmsg(db.get()));

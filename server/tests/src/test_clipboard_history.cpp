@@ -101,6 +101,22 @@ TEST_CASE(clipboard_history_add_remove_and_clear_preserve_metadata)
     REQUIRE_EQ(RecordAt(0).origin_device, first.origin_device);
 }
 
+TEST_CASE(clipboard_history_same_text_recopy_publishes_a_new_local_event)
+{
+    ClipboardFixture fixture;
+    std::vector<ClipboardRecord::Record> events;
+    ClipboardHistory::SetCaptureObserver([&](const auto &event) { events.push_back(event); });
+    const bool initial = ClipboardHistory::AddText(L"中文 😀", true);
+    const bool repeated = ClipboardHistory::AddText(L"中文 😀", true);
+    const bool history_load = ClipboardHistory::AddText(L"中文 😀");
+    ClipboardHistory::SetCaptureObserver({});
+    REQUIRE(initial && repeated && !history_load);
+    REQUIRE_EQ(events.size(), size_t{2});
+    REQUIRE(events[0].id != events[1].id);
+    REQUIRE_EQ(ClipboardHistory::LoadRecords().size(), size_t{1});
+    REQUIRE_EQ(RecordAt(0).id, events[1].id);
+}
+
 TEST_CASE(clipboard_history_preserves_capacity_and_unicode)
 {
     ClipboardFixture fixture;

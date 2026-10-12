@@ -3,6 +3,7 @@
 
 #include "Private.h"
 #include "Globals.h"
+#include "../../../engine/contracts/prefix_completion.h"
 #include "MetasequoiaIME.h"
 #include "CandidateListUIPresenter.h"
 #include "CompositionProcessorEngine.h"
@@ -263,6 +264,7 @@ void CMetasequoiaIME::IpcWorkerThread(CMetasequoiaIME *pIME)
         // Close the first-key window immediately on the reader thread.  The UI
         // message may be delayed, fail to post, or race a replacement handle.
         pIME->_workerCommitReady.store(false, std::memory_order_release);
+        Global::PrefixCompletionStarts.store(0, std::memory_order_relaxed);
         pIME->_acknowledgedWorkerFocusToken.store(0, std::memory_order_release);
         pIME->_ResetVoiceCompositionAssemble();
         HANDLE expected = disconnectedPipe;
@@ -479,6 +481,10 @@ void CMetasequoiaIME::IpcWorkerThread(CMetasequoiaIME *pIME)
             validFrame = hasTerminator && buf.data[0] != L'\0' && end && *end == L'\0';
         }
 
+        if (validFrame && buf.msg_type == Global::DataToTsfWorkerThreadMsgType::PrefixCompletionStartsChanged)
+        {
+            validFrame = FanyImePrefixCompletion::ValidStarts(buf.data);
+        }
         if (!validFrame)
         {
             if (buf.msg_type == Global::DataToTsfWorkerThreadMsgType::UpdateVoiceComposition ||
@@ -488,7 +494,8 @@ void CMetasequoiaIME::IpcWorkerThread(CMetasequoiaIME *pIME)
                 pIME->_ResetVoiceCompositionAssemble();
             }
             // Soft config/control frames: drop without killing the worker pipe.
-            if (buf.msg_type == Global::DataToTsfWorkerThreadMsgType::PagingCommaPeriodChanged ||
+            if (buf.msg_type == Global::DataToTsfWorkerThreadMsgType::PrefixCompletionStartsChanged ||
+                buf.msg_type == Global::DataToTsfWorkerThreadMsgType::PagingCommaPeriodChanged ||
                 buf.msg_type == Global::DataToTsfWorkerThreadMsgType::SmartPunctuationChanged ||
                 buf.msg_type == Global::DataToTsfWorkerThreadMsgType::SmartPunctuationRepeatToChineseChanged ||
                 buf.msg_type == Global::DataToTsfWorkerThreadMsgType::SmartPunctuationSpaceConvertChanged ||
@@ -603,6 +610,11 @@ void CMetasequoiaIME::IpcWorkerThread(CMetasequoiaIME *pIME)
         else if (buf.msg_type == Global::DataToTsfWorkerThreadMsgType::SmartPunctuationSpaceConvertChanged)
         {
             Global::SmartPunctuationSpaceConvertEnabled.store(buf.data[0] == L'1', std::memory_order_relaxed);
+        }
+        else if (buf.msg_type == Global::DataToTsfWorkerThreadMsgType::PrefixCompletionStartsChanged)
+        {
+            Global::PrefixCompletionStarts.store(FanyImePrefixCompletion::ParseStarts(buf.data),
+                                                 std::memory_order_relaxed);
         }
         else if (buf.msg_type == Global::DataToTsfWorkerThreadMsgType::SmartPunctuationDirectDigitChanged)
         {

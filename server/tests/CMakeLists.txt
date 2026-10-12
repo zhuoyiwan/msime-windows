@@ -92,6 +92,8 @@ set(TEST_SOURCE_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_candidate_skin_catalog_images.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_candidate_skin_catalog_page_arrows.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_candidate_skin_palette.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/test_wallpaper_palette.cpp"
+    "${CMAKE_SOURCE_DIR}/src/utils/wallpaper_palette.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_non_ascii_path_contract.cpp"
     "${CMAKE_SOURCE_DIR}/src/skin/candidate_skin_catalog.cpp"
     "${CMAKE_SOURCE_DIR}/src/window/candidate_skin_palette.cpp"
@@ -165,6 +167,7 @@ add_dependencies(${TEST_EXECUTABLE_NAME} ${DICTIONARY_REPLAY_EXECUTABLE_NAME})
 
 target_link_libraries(${TEST_EXECUTABLE_NAME}
     PRIVATE
+    windowscodecs
     MetasequoiaIme::Engine
     msime_clipboard_lan
     MetasequoiaIme::Voice

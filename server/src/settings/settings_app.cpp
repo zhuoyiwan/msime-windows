@@ -22,6 +22,7 @@
 #include <stdexcept>
 #include "skin/candidate_skin_catalog.h"
 #include "utils/common_utils.h"
+#include "utils/wallpaper_palette.h"
 #include "utils/single_instance.h"
 #include "voice-input/voice_providers.h"
 
@@ -390,6 +391,14 @@ static nlohmann::json CustomShuangpinSchemasJson()
     return schemas;
 }
 
+nlohmann::json WallpaperPaletteJson(bool light)
+{
+    const auto palette = MakeWallpaperPalette(GetConfiguredWallpaperColors() ? GetWallpaperSeed() : 0x6079A8, light);
+    return {{"accent", palette.accent},    {"surface", palette.surface}, {"card", palette.card},
+            {"border", palette.border},    {"text", palette.text},       {"secondary", palette.secondary},
+            {"selected", palette.selected}};
+}
+
 std::wstring BuildConfigMessage(bool refresh_skin_catalog)
 {
 
@@ -614,6 +623,8 @@ std::wstring BuildConfigMessage(bool refresh_skin_catalog)
             {"tsf_preedit_style", GetConfiguredTsfPreeditStyle()},
             {"tsf_preedit_shuangpin_quanpin", GetConfiguredTsfPreeditShuangpinQuanpin()},
             {"theme_mode", GetConfiguredThemeMode()},
+            {"wallpaper_colors", GetConfiguredWallpaperColors()},
+            {"wallpaper_palette", nlohmann::json{{"light", WallpaperPaletteJson(true)}, {"dark", WallpaperPaletteJson(false)}}},
             {"theme_settings", GetConfiguredThemeSettings()},
             {"theme_cand", GetConfiguredThemeCand()},
             {"theme_ftb", GetConfiguredThemeFtb()},
@@ -894,6 +905,8 @@ bool ApplyConfigUpdate(const json::object &data)
         return SetConfiguredCandidateTextColor(json::value_to<std::string>(data.at("value")));
     if (path == "appearance.theme_mode")
         return SetConfiguredThemeMode(json::value_to<std::string>(data.at("value")));
+    if (path == "appearance.wallpaper_colors")
+        return SetConfiguredWallpaperColors(json::value_to<bool>(data.at("value")));
     if (path == "appearance.theme_settings")
         return SetConfiguredThemeSettings(json::value_to<std::string>(data.at("value")));
     if (path == "appearance.theme_cand")
@@ -2323,7 +2336,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_pa
                 SerialTaskQueue::Completion completion;
                 try
                 {
-                    if (ReloadImeConfigIfChanged())
+                    static std::uint32_t wallpaper_seed = 0;
+                    const std::uint32_t current_seed = GetConfiguredWallpaperColors() ? GetWallpaperSeed() : 0;
+                    const bool wallpaper_changed = current_seed != wallpaper_seed;
+                    wallpaper_seed = current_seed;
+                    if (ReloadImeConfigIfChanged() || wallpaper_changed)
                         completion = ConfigCompletion();
                 }
                 catch (...)

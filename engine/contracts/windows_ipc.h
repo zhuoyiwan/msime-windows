@@ -437,7 +437,9 @@ constexpr std::uint32_t VModeChanged = 32;
 // Whether language-switch hotkeys commit raw composition, then cycle Chinese/Japanese/English. Payload "0"/"1".
 // Separate from InputModeChanged so old DLLs retain its active-language meaning and ignore this switch.
 constexpr std::uint32_t TrilingualCycleChanged = 33;
-constexpr std::uint32_t MaxKnown = TrilingualCycleChanged;
+// 十位 0/1，从 0 到 9 表示已有本机号码词条允许的起头数字；旧 DLL 忽略新 opcode。
+constexpr std::uint32_t PrefixCompletionStartsChanged = 34;
+constexpr std::uint32_t MaxKnown = PrefixCompletionStartsChanged;
 // Source compatibility for the Server's historical spellings.
 constexpr std::uint32_t SwitchToEn = SwitchToEnglish;
 constexpr std::uint32_t SwitchToCn = SwitchToChinese;

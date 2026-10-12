@@ -18,7 +18,7 @@ std::vector<ClipboardRecord::Record> LoadRecords();
 std::string LocalDeviceId();
 ClipboardSync::ImportResult ImportRecord(const ClipboardRecord::Record &record, std::string_view authenticated_peer);
 std::vector<std::wstring> Load();
-bool AddText(std::wstring text);
+bool AddText(std::wstring text, bool fresh_copy = false);
 bool RemoveText(const std::wstring &text);
 void Clear();
 bool IsEnabled();
@@ -39,4 +39,6 @@ void Start();
 void Stop();
 void Sync(bool enabled);
 bool IsRunning();
+// 已认证的新事件进入系统剪贴板；由监听窗口写入并抑制自动回传。
+void ApplyRemoteText(std::wstring text);
 } // namespace ClipboardMonitor

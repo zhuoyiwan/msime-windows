@@ -145,7 +145,7 @@ double g_assoc_sentence_collocation_weight = 0.1;
 double g_assoc_sentence_collocation_rerank_weight = 0.05;
 // 候选窗整句候选后的来源标签（〔Trigram〕〔神经K〕等），默认不显示。
 bool g_assoc_sentence_source_badge = false;
-bool g_emoji_mixed_input_enabled = false;
+bool g_emoji_mixed_input_enabled = true;
 bool g_kaomoji_mixed_input_enabled = false;
 bool g_unicode_mode_enabled = true;
 bool g_quick_phrase_enabled = true;
@@ -191,6 +191,7 @@ bool g_candidate_fixed_badge = true;
 std::string g_candidate_fixed_badge_style = "paperclip";
 std::string g_settings_window_linger = "off";
 std::string g_theme_mode = "system";
+bool g_wallpaper_colors = false;
 std::string g_theme_settings = "follow";
 std::string g_theme_cand = "follow";
 std::string g_theme_ftb = "follow";
@@ -365,8 +366,18 @@ bool LoadImeConfig()
         if (!input)
             return false;
         const std::string text((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+        input.close();
         auto tbl = toml::parse(text);
         RevealStoredCredentials(tbl);
+        // 改版首次升级开启 Emoji；迁移后保留用户关闭的选择。两个键原子写入，失败下次重试。
+        if (tbl["general"]["emoji_candidates_revision"].value_or(0) < 1 &&
+            WriteConfiguredValues(
+                {{"general", "emoji_mixed_input", "true"}, {"general", "emoji_candidates_revision", "1"}}))
+        {
+            if (!tbl["general"].is_table())
+                tbl.insert_or_assign("general", toml::table{});
+            tbl["general"].as_table()->insert_or_assign("emoji_mixed_input", true);
+        }
 
         const int page_size = tbl["appearance"]["page_size"].value_or(6);
         g_candidate_page_size = page_size >= 3 && page_size <= 9 ? page_size : 6;
@@ -571,7 +582,8 @@ bool LoadImeConfig()
         g_assoc_sentence_collocation_rerank_weight =
             tbl["association"]["sentence_collocation_rerank_weight"].value_or(0.05);
         g_assoc_sentence_source_badge = tbl["association"]["sentence_source_badge"].value_or(false);
-        g_emoji_mixed_input_enabled = tbl["general"]["emoji_mixed_input"].value_or(false);
+        g_emoji_mixed_input_enabled = tbl["general"]["emoji_mixed_input"].value_or(true);
+        g_wallpaper_colors = tbl["appearance"]["wallpaper_colors"].value_or(false);
         g_kaomoji_mixed_input_enabled = tbl["general"]["kaomoji_mixed_input"].value_or(false);
         g_unicode_mode_enabled = tbl["utility"]["unicode_mode"].value_or(true);
         g_quick_phrase_enabled = tbl["utility"]["quick_phrase"].value_or(true);

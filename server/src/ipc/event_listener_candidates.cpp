@@ -24,6 +24,7 @@
 #include "config/ime_config.h"
 #include "settings/collocation_model.h"
 #include "engine/local_modes/quick_phrase_query.h"
+#include "engine/contracts/prefix_completion.h"
 #include "engine/local_modes/unicode_query.h"
 #include "engine/local_modes/date_time_query.h"
 #include "engine/local_modes/emoji_query.h"
@@ -114,11 +115,10 @@ bool IsQuickPhraseInput(const std::string &raw)
 }
 
 // 快捷短语混进全拼/双拼的普通候选（Shift+K 模式另走
-// IsQuickPhraseInput）：按整串编码精确匹配，只在输入是纯小写字母、不在造词、光标前缀
+// IsQuickPhraseInput）：按编码前缀匹配，只在输入是纯小写字母、不在造词、光标前缀
 // 没截断时出现。整组插在第 slot 个普通候选之前，槽位由调频学出来，最多退到首页末位。
 // 不看辅助码：双拼开着辅助码时，任何「完整音节 + 一个字母」的奇数长编码（dia = di + a）
-// 都会被认成带辅助码，按辅助码拦掉就等于这类编码永远出不来。整串精确等于用户自定义的
-// 编码时，按短语处理。
+// 都会被认成带辅助码，按辅助码拦掉就等于这类编码永远出不来。
 void PlaceQuickPhrases(std::vector<WordItem> &items, const std::string &current_input)
 {
     const SchemeType scheme = g_inputSession->current_scheme_type();
@@ -129,7 +129,7 @@ void PlaceQuickPhrases(std::vector<WordItem> &items, const std::string &current_
             return ch >= 'a' && ch <= 'z';
         }))
         return;
-    auto phrases = metasequoia::local_modes::query_quick_phrases_by_code(current_input).candidates;
+    auto phrases = metasequoia::local_modes::query_quick_phrases(current_input, 20).candidates;
     if (phrases.empty())
         return;
     std::size_t slot = 0;
@@ -651,6 +651,19 @@ void PrepareCandidateList(uint64_t client_id, uint64_t activation_epoch)
     {
         // Do not expose transient Chinese/raw fallback candidates while the
         // dedicated English query is in flight.
+    }
+    else if (FanyImePrefixCompletion::Numeric(current_input.data(), current_input.size()))
+    {
+        // 原样数字始终是首选，只有点选完整号码才执行补全。
+        items.emplace_back(current_input, current_input, 1, CandidateSource::Generated);
+        if (current_input.size() >= 3 && GetConfiguredMixedCandidatesEnabled() &&
+            GetConfiguredQuickPhraseCandidatesEnabled())
+        {
+            auto completed = metasequoia::local_modes::query_quick_phrases(current_input, 5).candidates;
+            for (auto &item : completed)
+                if (item.word != current_input)
+                    items.push_back(std::move(item));
+        }
     }
     else if (IsUnicodeInput(current_input))
     {

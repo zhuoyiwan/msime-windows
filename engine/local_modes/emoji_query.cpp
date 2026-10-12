@@ -69,14 +69,27 @@ LocalQueryResult query_emoji(const std::string &code, SchemeType scheme, const s
     }
 
     const std::string lower = lower_ascii(code);
+    const auto compact = [](std::string text) {
+        text.erase(std::remove(text.begin(), text.end(), '\''), text.end());
+        return text;
+    };
     std::vector<std::string> prefixes{lower};
+    if (compact(lower).empty())
+        return {};
     if (scheme == SchemeType::Shuangpin)
     {
         const std::string quanpin = shuangpin::normalize_input(lower, profile);
-        if (!quanpin.empty() && quanpin != lower)
+        if (!quanpin.empty() && quanpin != prefixes.front())
         {
             prefixes.push_back(quanpin);
         }
+    }
+    const auto original_prefixes = prefixes;
+    for (const auto &prefix : original_prefixes)
+    {
+        const auto spelling = compact(prefix);
+        if (!spelling.empty() && spelling != prefix)
+            prefixes.push_back(spelling);
     }
 
     const std::shared_ptr<sqlite3> database = open_local_database(database_path);
@@ -89,15 +102,24 @@ LocalQueryResult query_emoji(const std::string &code, SchemeType scheme, const s
     {
         std::string text;
         int sort_order;
+        bool exact;
+        std::string keywords;
     };
     std::vector<Entry> entries;
     std::unordered_set<std::string> seen;
-    constexpr const char *kSql = "SELECT emoji,sort_order FROM emoji_pinyin WHERE key>=?1 AND key<?2 "
-                                 "ORDER BY sort_order LIMIT ?3";
+    constexpr const char *kSql = "SELECT p.emoji,p.sort_order,p.key=?1,COALESCE(e.keywords,'') FROM emoji_pinyin p "
+                                 "LEFT JOIN emoji e ON e.emoji=p.emoji WHERE p.key>=?1 AND p.key<?2 "
+                                 "ORDER BY p.key<>?1,p.sort_order LIMIT ?3";
+    constexpr const char *kLegacySql = "SELECT emoji,sort_order,key=?1,'' FROM emoji_pinyin WHERE key>=?1 AND key<?2 "
+                                       "ORDER BY key<>?1,sort_order LIMIT ?3";
     for (const std::string &prefix : prefixes)
     {
+        // 旧目录可能有带分隔符的编码；原编码查到结果时不扩大到紧凑前缀。
+        if (!entries.empty() && prefix == compact(lower) && prefix != lower && scheme == SchemeType::Quanpin)
+            break;
         sqlite3_stmt *raw_statement = nullptr;
-        if (sqlite3_prepare_v2(database.get(), kSql, -1, &raw_statement, nullptr) != SQLITE_OK)
+        if (sqlite3_prepare_v2(database.get(), kSql, -1, &raw_statement, nullptr) != SQLITE_OK &&
+            sqlite3_prepare_v2(database.get(), kLegacySql, -1, &raw_statement, nullptr) != SQLITE_OK)
         {
             return query_failure("Emoji database could not be queried.");
         }
@@ -117,7 +139,9 @@ LocalQueryResult query_emoji(const std::string &code, SchemeType scheme, const s
             const auto *text = reinterpret_cast<const char *>(sqlite3_column_text(statement.get(), 0));
             if (text != nullptr && seen.insert(text).second)
             {
-                entries.push_back({text, sqlite3_column_int(statement.get(), 1)});
+                const auto *keywords = reinterpret_cast<const char *>(sqlite3_column_text(statement.get(), 3));
+                entries.push_back({text, sqlite3_column_int(statement.get(), 1),
+                                   sqlite3_column_int(statement.get(), 2) != 0, keywords ? keywords : ""});
             }
         }
         if (step_result != SQLITE_DONE)
@@ -126,8 +150,9 @@ LocalQueryResult query_emoji(const std::string &code, SchemeType scheme, const s
         }
     }
 
-    std::stable_sort(entries.begin(), entries.end(),
-                     [](const Entry &left, const Entry &right) { return left.sort_order < right.sort_order; });
+    std::stable_sort(entries.begin(), entries.end(), [](const Entry &left, const Entry &right) {
+        return left.exact != right.exact ? left.exact : left.sort_order < right.sort_order;
+    });
     const std::size_t count = std::min(static_cast<std::size_t>(limit), entries.size());
     LocalQueryResult result;
     result.candidates.reserve(count);
@@ -135,6 +160,7 @@ LocalQueryResult query_emoji(const std::string &code, SchemeType scheme, const s
     {
         result.candidates.emplace_back(lower, entries[index].text, static_cast<std::int64_t>(count - index),
                                        CandidateSource::Emoji);
+        result.candidates.back().expressive_keywords = entries[index].keywords;
     }
     return result;
 }

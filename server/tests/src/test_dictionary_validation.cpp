@@ -1,6 +1,7 @@
 #include "settings/dictionary_manager.h"
 #include "settings/dictionary_validation.h"
 #include "engine/user_dictionary/user_dictionary_journal.h"
+#include "engine/local_modes/quick_phrase_query.h"
 #include "tests/includes/test_framework.h"
 #include "tests/includes/test_utf8_path.h"
 
@@ -556,6 +557,34 @@ TEST_CASE(QuickPhraseDuplicateCreateReportsExistingPhrase)
     REQUIRE_EQ(std::string(response.at("message").as_string()), std::string("相同编码和内容的快捷短语已存在"));
     REQUIRE_EQ(data.rows(), before);
     REQUIRE(!std::filesystem::exists(std::filesystem::u8path(user_dictionary::default_user_db_path())));
+}
+
+TEST_CASE(QuickPhraseNumericCodesSupportPrefixQueryAndRejectMixedOrOversizeCodes)
+{
+    ScopedQuickPhraseDataDir data;
+    const auto response = SettingsDictionary::HandleRequest(
+        {{"dictionary", "quick"}, {"action", "create"}, {"code", "13800000000"}, {"word", "13800000000"}});
+    REQUIRE(response.at("ok").as_bool());
+    const auto matches = metasequoia::local_modes::query_quick_phrases("138").candidates;
+    REQUIRE_EQ(matches.size(), size_t{1});
+    REQUIRE_EQ(matches.front().word, std::string("13800000000"));
+    REQUIRE(metasequoia::local_modes::query_quick_phrases("139").candidates.empty());
+    REQUIRE((metasequoia::local_modes::quick_phrase_numeric_starts() & (1u << 1)) != 0);
+    REQUIRE(!SettingsDictionary::HandleRequest(
+                 {{"dictionary", "quick"}, {"action", "create"}, {"code", "a138"}, {"word", "invalid"}})
+                 .at("ok")
+                 .as_bool());
+    REQUIRE(!SettingsDictionary::HandleRequest(
+                 {{"dictionary", "quick"}, {"action", "create"}, {"code", std::string(65, '1')}, {"word", "invalid"}})
+                 .at("ok")
+                 .as_bool());
+    REQUIRE(SettingsDictionary::HandleRequest(
+                {{"dictionary", "quick"}, {"action", "create"}, {"code", "csxm"}, {"word", "测试姓名"}})
+                .at("ok")
+                .as_bool());
+    const auto names = metasequoia::local_modes::query_quick_phrases("cs").candidates;
+    REQUIRE_EQ(names.size(), size_t{1});
+    REQUIRE_EQ(names.front().word, std::string("测试姓名"));
 }
 
 TEST_CASE(QuickPhraseDuplicateUpdatePreservesBothPhrases)

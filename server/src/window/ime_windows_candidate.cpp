@@ -3,8 +3,10 @@
 #include "window/ime_windows_internal.h"
 #include "global/globals.h"
 #include "config/ime_config.h"
+#include "config/prefix_completion.h"
 #include "ipc/ipc.h"
 #include "ime_windows.h"
+#include "utils/wallpaper_palette.h"
 #include "window/candidate_presenter.h"
 #include "window/floating_toolbar_presenter.h"
 #include "defines/defines.h"
@@ -496,6 +498,16 @@ LRESULT CALLBACK WndProcCandWindow(HWND hwnd, UINT message, WPARAM wParam, LPARA
         }
         if (wParam == TIMER_ID_CONFIG_SYNC)
         {
+            static std::uint32_t wallpaper_seed = 0;
+            const auto current_seed = GetConfiguredWallpaperColors() ? GetWallpaperSeed() : 0;
+            if (current_seed != wallpaper_seed)
+            {
+                wallpaper_seed = current_seed;
+                ApplyConfiguredUiThemes();
+                if (::is_global_wnd_cand_shown && CandidatePresenter::Instance().IsBound())
+                    CandidatePresenter::Instance().ShowFromGlobalState(GetCandidateLayoutCaret());
+            }
+            const bool previous_wallpaper_colors = GetConfiguredWallpaperColors();
             const SchemeType previous_input_scheme = GetConfiguredActiveInputScheme();
             const bool previous_trilingual_cycle = GetConfiguredTrilingualCycleEnabled();
             const std::string previous_shuangpin_schema = GetConfiguredShuangpinSchema();
@@ -527,6 +539,7 @@ LRESULT CALLBACK WndProcCandWindow(HWND hwnd, UINT message, WPARAM wParam, LPARA
                 FormatMidSentenceHelpcodeSemicolonWorkerPayload();
             const std::wstring previous_direct_helpcode = FormatDirectHelpcodeWorkerPayload();
             const std::wstring previous_v_mode = FormatVModeWorkerPayload();
+            const std::wstring previous_prefix_completion = FormatPrefixCompletionWorkerPayload();
             const std::wstring previous_mid_sentence_helpcode_uppercase =
                 FormatMidSentenceHelpcodeUppercaseWorkerPayload();
             const std::wstring previous_paging_worker_payload = FormatPagingCommaPeriodWorkerPayload();
@@ -559,6 +572,7 @@ LRESULT CALLBACK WndProcCandWindow(HWND hwnd, UINT message, WPARAM wParam, LPARA
                 if (previous_layout != GetConfiguredCandidateWindowLayout())
                     ApplyConfiguredCandidateWindowLayout();
                 if (previous_candidate_skin != GetConfiguredCandidateSkin() ||
+                    previous_wallpaper_colors != GetConfiguredWallpaperColors() ||
                     previous_theme_mode != GetConfiguredThemeMode() ||
                     previous_theme_cand != GetConfiguredThemeCand() || previous_theme_ftb != GetConfiguredThemeFtb() ||
                     previous_theme_menu != GetConfiguredThemeMenu())
@@ -576,6 +590,7 @@ LRESULT CALLBACK WndProcCandWindow(HWND hwnd, UINT message, WPARAM wParam, LPARA
                 }
                 if (::is_global_wnd_cand_shown &&
                     (previous_layout != GetConfiguredCandidateWindowLayout() ||
+                     previous_wallpaper_colors != GetConfiguredWallpaperColors() ||
                      previous_candidate_skin != GetConfiguredCandidateSkin() ||
                      previous_theme_mode != GetConfiguredThemeMode() ||
                      previous_theme_cand != GetConfiguredThemeCand() || previous_font != GetConfiguredCandidateFont() ||
@@ -713,6 +728,10 @@ LRESULT CALLBACK WndProcCandWindow(HWND hwnd, UINT message, WPARAM wParam, LPARA
                     BroadcastToTsfWorkerThreadViaNamedpipe(Global::DataFromServerMsgTypeToTsfWorkerThread::VModeChanged,
                                                            FormatVModeWorkerPayload());
                 }
+                if (previous_prefix_completion != FormatPrefixCompletionWorkerPayload())
+                    BroadcastToTsfWorkerThreadViaNamedpipe(
+                        Global::DataFromServerMsgTypeToTsfWorkerThread::PrefixCompletionStartsChanged,
+                        FormatPrefixCompletionWorkerPayload());
                 if (previous_mid_sentence_helpcode_uppercase != FormatMidSentenceHelpcodeUppercaseWorkerPayload())
                 {
                     BroadcastToTsfWorkerThreadViaNamedpipe(
@@ -757,6 +776,9 @@ LRESULT CALLBACK WndProcCandWindow(HWND hwnd, UINT message, WPARAM wParam, LPARA
 
     /* Clear dictionary buffer cache */
     case WM_CLS_DICT_CACHE: {
+        BroadcastToTsfWorkerThreadViaNamedpipe(
+            Global::DataFromServerMsgTypeToTsfWorkerThread::PrefixCompletionStartsChanged,
+            FormatPrefixCompletionWorkerPayload());
         FanyNamedPipe::EnqueueResetInputSessionCacheTask();
 #ifdef FANY_DEBUG
         (void)0;

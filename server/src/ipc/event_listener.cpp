@@ -29,6 +29,7 @@
 #include "english/english_ime.h"
 #include "config/ime_config.h"
 #include "engine/contracts/date_time_input.h"
+#include "engine/contracts/prefix_completion.h"
 #include "engine/contracts/v_mode_input.h"
 #include "conversion/chinese_converter.h"
 #include "log/candidate_diag_log.h"
@@ -304,9 +305,10 @@ void ClearSpecialModeTriggers()
 // be interpreted as normal pinyin.
 bool IsSpecialModeCompositionActive(const std::string &raw)
 {
-    return IsQuickPhraseCompositionActive(raw) || IsUnicodeCompositionActive(raw) || IsDateTimeCompositionActive(raw) ||
-           IsEmojiCompositionActive(raw) || IsKaomojiCompositionActive(raw) || IsJianpinCompositionActive(raw) ||
-           IsYModeCompositionActive(raw) || IsVModeCompositionActive(raw);
+    return FanyImePrefixCompletion::Numeric(raw.data(), raw.size()) || IsQuickPhraseCompositionActive(raw) ||
+           IsUnicodeCompositionActive(raw) || IsDateTimeCompositionActive(raw) || IsEmojiCompositionActive(raw) ||
+           IsKaomojiCompositionActive(raw) || IsJianpinCompositionActive(raw) || IsYModeCompositionActive(raw) ||
+           IsVModeCompositionActive(raw);
 }
 } // namespace event_listener_detail
 

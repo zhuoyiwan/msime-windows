@@ -60,6 +60,8 @@ struct WordItem
     // Generated/Fallback 同时被原样上屏、英文、日期、Unicode、假名、译文等合成候选借用，
     // 候选窗的〔Trigram〕/〔Unigram〕来源标签只认这个标记，不能单凭 source 判断。
     bool sentence_association = false;
+    // 表情目录的关键词，仅用于本地混排锚定，不进入 IPC 或用户词库。
+    std::string expressive_keywords;
 
     WordItem() = default;
     WordItem(std::string pinyin_value, std::string word_value, std::int64_t weight_value,

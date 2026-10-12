@@ -15,6 +15,7 @@
 #include <string>
 #include <fmt/xchar.h>
 #include "Ipc.h"
+#include "../../../engine/contracts/prefix_completion.h"
 #include "FanyUtils.h"
 #include "FanyLog.h"
 #include "EditSession.h"
@@ -164,6 +165,17 @@ BOOL CCompositionProcessorEngine::IsVirtualKeyNeedForFreshComposition(UINT uCode
     }
 
     // Classify against an actually empty composition. This path is used while
+    if (!Global::JapaneseInputModeEnabled.load(std::memory_order_relaxed) && pwch &&
+        FanyImePrefixCompletion::Accepts(static_cast<const WCHAR *>(nullptr), 0, 0, *pwch,
+                                         Global::PrefixCompletionStarts.load(std::memory_order_relaxed)))
+    {
+        if (pKeyState)
+        {
+            pKeyState->Category = CATEGORY_COMPOSING;
+            pKeyState->Function = FUNCTION_INPUT;
+        }
+        return TRUE;
+    }
     // the old focus session is still being cancelled, so none of its candidate
     // mode, wildcard flags, or virtual-key buffer may affect the first key in
     // the replacement session.
@@ -235,6 +247,18 @@ BOOL CCompositionProcessorEngine::IsVirtualKeyNeed( //
     if (candidateMode == CANDIDATE_ORIGINAL)
     {
         fComposing = FALSE;
+    }
+
+    if (!Global::JapaneseInputModeEnabled.load(std::memory_order_relaxed) && pwch &&
+        FanyImePrefixCompletion::Accepts(_keystrokeBuffer.Get(), _keystrokeBuffer.GetLength(), _caretPosition, *pwch,
+                                         Global::PrefixCompletionStarts.load(std::memory_order_relaxed)))
+    {
+        if (pKeyState)
+        {
+            pKeyState->Category = CATEGORY_COMPOSING;
+            pKeyState->Function = FUNCTION_INPUT;
+        }
+        return TRUE;
     }
 
     if (IsManualPinyinSeparatorInComposition(pwch ? *pwch : 0, fComposing, candidateMode, _keystrokeBuffer.GetLength()))

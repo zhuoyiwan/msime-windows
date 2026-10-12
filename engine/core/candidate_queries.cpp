@@ -2,6 +2,7 @@
 #include "data_path.h"
 #include "../contracts/assets/assets.h"
 #include "../local_modes/emoji_query.h"
+#include "expressive_candidate_order.h"
 #include "../local_modes/jianpin_query.h"
 #include "../local_modes/kaomoji_query.h"
 #include "../local_modes/quick_phrase_query.h"
@@ -189,6 +190,7 @@ std::vector<WordItem> CandidateQueries::mixed(std::vector<WordItem> candidates, 
         candidates.insert(candidates.end(), std::make_move_iterator(source->begin()),
                           std::make_move_iterator(source->end()));
     }
+    anchor_emoji_candidates(candidates);
     return candidates;
 }
 

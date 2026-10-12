@@ -10,6 +10,8 @@
 #include "ipc/candidate_translation_policy.h"
 #include "ipc/input_key_policy.h"
 #include "engine/contracts/date_time_input.h"
+#include "engine/contracts/prefix_completion.h"
+#include "config/prefix_completion.h"
 #include "engine/contracts/direct_helpcode.h"
 #include "engine/contracts/ipc_negotiation.h"
 #include "engine/contracts/mid_sentence_helpcode.h"
@@ -175,6 +177,19 @@ bool IsDateTimeInputKey(UINT keycode, WCHAR wch, const std::string &raw_input)
     return FanyImeDateTimeInput::AcceptsAt(raw_input.data(), raw_input.size(), caret, static_cast<char>(wch));
 }
 
+bool IsPrefixCompletionInputKey(WCHAR wch, const std::string &raw)
+{
+    if (g_english_input_mode || g_inputSession == nullptr ||
+        (g_inputSession->current_scheme_type() != SchemeType::Quanpin &&
+         g_inputSession->current_scheme_type() != SchemeType::Shuangpin))
+        return false;
+    const std::uint16_t starts =
+        raw.empty() ? FanyImePrefixCompletion::ParseStarts(FormatPrefixCompletionWorkerPayload().c_str()) : 0;
+    return FanyImePrefixCompletion::Accepts(raw.data(), raw.size(),
+                                            (std::min)(GlobalIme::composition.caret_position, raw.size()),
+                                            static_cast<char>(wch), starts);
+}
+
 // V 模式的数字和 . + - * / ( )：插入后仍是一段 V 模式输入时是编码键，不再选词、翻页或当标点。只看字符不看
 // 键位，主键盘和小键盘一样；Shift+1 这类出 ! 的仍是选词键。TSF 按同一条规则
 // （FanyImeVModeInput::AcceptsAt）和同一个 Trigger（VModeChanged）预判吃键。光标按 IsDirectHelpcodeSlashKey
@@ -238,7 +253,8 @@ bool IsSelectionKey(UINT keycode)
             return shift_only && keycode >= '1' && keycode <= '9';
         }
         // T 模式指定日期时间：接得上的数字是编码键；V 模式里的数字也是。
-        return !IsDateTimeInputKey(keycode, Global::Wch, raw) && !IsVModeInputKey(Global::Wch, raw);
+        return !IsDateTimeInputKey(keycode, Global::Wch, raw) && !IsVModeInputKey(Global::Wch, raw) &&
+               !IsPrefixCompletionInputKey(Global::Wch, raw);
     }
     return false;
 }
@@ -455,7 +471,8 @@ bool ApplyCompositionEditKey(UINT keycode, WCHAR wch, UINT modifiers_down, bool 
         {
             input = '-';
         }
-        else if (IsDateTimeInputKey(keycode, wch, raw) || IsVModeInputKey(wch, raw))
+        else if (IsDateTimeInputKey(keycode, wch, raw) || IsVModeInputKey(wch, raw) ||
+                 IsPrefixCompletionInputKey(wch, raw))
         {
             input = static_cast<char>(wch);
         }
@@ -1077,6 +1094,7 @@ void HandleImeKey(uint64_t client_id, uint64_t activation_epoch, uint64_t reques
         IsMidSentenceHelpcodeMarkerKey(Global::Keycode, Global::Wch, input_before_key);
     const bool is_direct_helpcode_slash = IsDirectHelpcodeSlashKey(Global::Keycode, Global::Wch, input_before_key);
     const bool is_date_time_input_key = IsDateTimeInputKey(Global::Keycode, Global::Wch, input_before_key);
+    const bool is_prefix_completion_input_key = IsPrefixCompletionInputKey(Global::Wch, input_before_key);
     // V 模式的数字和 . + - * / ( )：只进输入串，不选词、不翻页、不当标点。
     const bool is_v_mode_input_key = IsVModeInputKey(Global::Wch, input_before_key);
     // V 模式里数字键用来输入，Shift+数字选词（同 U 模式）。Shift+1 出的是 !，不排除就会被当成「上屏高亮候选
@@ -1106,7 +1124,7 @@ void HandleImeKey(uint64_t client_id, uint64_t activation_epoch, uint64_t reques
         Global::Keycode == VK_DELETE || (Global::Keycode >= 'A' && Global::Keycode <= 'Z') ||
         is_manual_pinyin_separator || is_microsoft_shuangpin_ing_key || is_mid_sentence_helpcode_marker ||
         is_direct_helpcode_slash || is_unicode_hex_digit || is_unicode_plus || is_japanese_long_vowel ||
-        is_date_time_input_key || is_v_mode_input_key;
+        is_date_time_input_key || is_v_mode_input_key || is_prefix_completion_input_key;
     const bool should_forward_key_to_session = !is_commit_with_highlighted_candidate_punctuation && !is_selection_key &&
                                                !is_paging_key && !is_composition_edit_key;
 

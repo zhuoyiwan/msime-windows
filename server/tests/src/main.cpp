@@ -1,6 +1,7 @@
 #include <exception>
 #include <fmt/core.h>
 #include "tests/includes/test_framework.h"
+#include <string_view>
 
 namespace test
 {
@@ -16,11 +17,18 @@ Registrar::Registrar(const char *name, std::function<void()> fn)
 }
 } // namespace test
 
-int main()
+int main(int argc, char **argv)
 {
+    const std::string_view filter = argc == 3 && std::string_view(argv[1]) == "--filter" ? argv[2] : "";
+    if (argc != 1 && filter.empty())
+        return 2;
     int failures = 0;
+    size_t executed = 0;
     for (const auto &test_case : test::registry())
     {
+        if (!filter.empty() && test_case.name.find(filter) == std::string::npos)
+            continue;
+        ++executed;
         try
         {
             test_case.fn();
@@ -44,6 +52,6 @@ int main()
         return 1;
     }
 
-    fmt::print("{} test(s) passed\n", test::registry().size());
-    return 0;
+    fmt::print("{} test(s) passed\n", executed);
+    return executed ? 0 : 2;
 }

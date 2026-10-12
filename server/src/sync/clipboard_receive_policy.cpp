@@ -1,5 +1,6 @@
 #include "sync/clipboard_receive_policy.h"
 #include "clipboard/clipboard_record.h"
+#include <algorithm>
 
 namespace ClipboardSync
 {
@@ -23,9 +24,11 @@ ImportResult MergeReceived(std::vector<MsimeClipboardSync::Record> &history, con
             return ImportResult::IdentityConflict;
         }
     }
-    for (const auto &record : history)
-        if (record.hash == incoming.hash && record.text == incoming.text)
-            return ImportResult::Duplicate;
+    // 同文的新复制也是新事件；只按事件 ID 去重，历史仍只保留一条同文记录。
+    history.erase(std::remove_if(
+                      history.begin(), history.end(),
+                      [&](const auto &record) { return record.hash == incoming.hash && record.text == incoming.text; }),
+                  history.end());
     // Order by receipt, not the remote clock; a peer far in the future must not pin its item.
     history.insert(history.begin(), incoming);
     if (history.size() > MsimeClipboardSync::kMaxItems)

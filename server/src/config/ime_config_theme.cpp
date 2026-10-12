@@ -6,6 +6,19 @@
 
 using namespace ime_config_detail;
 
+bool GetConfiguredWallpaperColors()
+{
+    return g_wallpaper_colors;
+}
+
+bool SetConfiguredWallpaperColors(bool enabled)
+{
+    if (!WriteConfiguredValue("appearance", "wallpaper_colors", enabled ? "true" : "false"))
+        return false;
+    g_wallpaper_colors = enabled;
+    return true;
+}
+
 namespace
 {
 std::string NormalizeThemeMode(const std::string &mode)

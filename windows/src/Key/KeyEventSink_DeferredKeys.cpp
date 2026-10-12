@@ -2,6 +2,7 @@
 // behind it, and the queue/drain/complete/fail path. A failed key is dropped, never replayed.
 
 #include "Private.h"
+#include "../../../engine/contracts/prefix_completion.h"
 #include "Globals.h"
 #include "MetasequoiaIME.h"
 #include "CandidateListUIPresenter.h"
@@ -587,6 +588,12 @@ bool CMetasequoiaIME::_ClassifyDeferredKeyDown(_In_ ITfContext *pContext, WPARAM
         {
             isInputKey = CCompositionProcessorEngine::IsDateTimeInputKey(
                 *classifiedCode, *classifiedWch, shadow.rawInput.data(), shadow.rawInput.size(), shadow.caret);
+        }
+        if (!isInputKey && !shadow.japaneseMode)
+        {
+            isInputKey = FanyImePrefixCompletion::Accepts(
+                shadow.rawInput.data(), shadow.rawInput.size(), shadow.caret, *classifiedWch,
+                Global::PrefixCompletionStarts.load(std::memory_order_relaxed));
         }
         // V 模式的数字和运算符，同上。
         if (!isInputKey && !shadow.japaneseMode)

@@ -10,8 +10,10 @@
 #include "skin/candidate_skin_catalog.h"
 #include "utils/common_utils.h"
 #include "utils/window_utils.h"
+#include "utils/wallpaper_palette.h"
 #include "webview2/windows_webview2.h"
 #include "window/floating_toolbar_skin.h"
+#include "window/candidate_skin_palette.h"
 
 #include "msimeui/Controls.h"
 #include "msimeui/DeviceResources.h"
@@ -604,6 +606,17 @@ void FloatingToolbarPresenter::ApplyTheme()
         ApplyFloatingToolbarSkinOverrides(skin, *package, light);
     }
     impl_->fill = skin.fill;
+    if (GetConfiguredWallpaperColors())
+    {
+        const auto wallpaper = GetWallpaperPalette(light);
+        skin.fill = CandidateColorFromRgb(wallpaper.surface);
+        skin.border = CandidateColorFromRgb(wallpaper.border);
+        skin.glyph = CandidateColorFromRgb(wallpaper.text);
+        skin.handle = CandidateColorFromRgb(wallpaper.accent);
+        skin.hover = CandidateColorFromRgb(wallpaper.selected);
+        skin.divider = skin.border;
+        impl_->fill = skin.fill;
+    }
     impl_->border = skin.border;
     impl_->glyph = skin.glyph;
     impl_->hover = skin.hover;

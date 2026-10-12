@@ -9,6 +9,8 @@ export type SurfaceTheme = 'follow' | 'dark' | 'light';
 export type ResolvedTheme = 'dark' | 'light';
 
 export type ThemeConfig = {
+  wallpaper_colors?: boolean;
+  wallpaper_palette?: Record<ResolvedTheme, WallpaperPalette>;
   theme_mode?: string;
   theme_settings?: string;
   theme_cand?: string;
@@ -19,6 +21,41 @@ export type ThemeConfig = {
   theme_handwriting?: string;
   theme_voice?: string;
 };
+
+type WallpaperPalette = {
+  accent: number; surface: number; card: number; border: number;
+  text: number; secondary: number; selected: number;
+};
+
+const WALLPAPER_VARIABLES = [
+  '--accent-color', '--accent-strong', '--accent-soft', '--accent-soft-border',
+  '--chrome-bg', '--bg-color', '--sidebar-bg', '--card-bg', '--card-bg-solid',
+  '--surface-raised', '--dropdown-bg', '--dropdown-menu-bg', '--text-color',
+  '--text-secondary', '--text-muted', '--text-subtle', '--sidebar-item-color',
+  '--border-color', '--border-strong', '--dropdown-item-color', '--sidebar-hover'
+];
+
+export function applyWallpaperPalette(theme: ResolvedTheme, config?: ThemeConfig): void {
+  const root = document.documentElement;
+  const palette = config?.wallpaper_colors ? config.wallpaper_palette?.[theme] : undefined;
+  if (!palette) {
+    WALLPAPER_VARIABLES.forEach(name => root.style.removeProperty?.(name));
+    return;
+  }
+  const css = (rgb: number) => `#${(rgb & 0xffffff).toString(16).padStart(6, '0')}`;
+  const variables: Record<string, string> = {
+    '--accent-color': css(palette.accent), '--accent-strong': css(palette.accent),
+    '--accent-soft': `${css(palette.accent)}28`, '--accent-soft-border': `${css(palette.accent)}40`,
+    '--chrome-bg': css(palette.surface), '--bg-color': css(palette.surface), '--sidebar-bg': css(palette.card),
+    '--card-bg': css(palette.card), '--card-bg-solid': css(palette.card), '--surface-raised': css(palette.card),
+    '--dropdown-bg': css(palette.card), '--dropdown-menu-bg': css(palette.card),
+    '--text-color': css(palette.text), '--text-secondary': css(palette.secondary),
+    '--text-muted': css(palette.secondary), '--text-subtle': css(palette.secondary),
+    '--sidebar-item-color': css(palette.text), '--dropdown-item-color': css(palette.text),
+    '--border-color': css(palette.border), '--border-strong': css(palette.border), '--sidebar-hover': css(palette.selected)
+  };
+  Object.entries(variables).forEach(([name, value]) => root.style.setProperty(name, value));
+}
 
 const THEME_MODE_LABELS: Record<ThemeMode, string> = {
   dark: '深色',
@@ -109,6 +146,8 @@ export function applyThemeConfig(config: ThemeConfig | undefined): void {
   const candResolved = resolveTheme(mode, candTheme);
 
   applyDocumentTheme(settingsResolved);
+  applyWallpaperPalette(settingsResolved, config);
+  applyDropdownLabel('wallpaperColorsBtn', config?.wallpaper_colors ? '开启' : '关闭');
   applyCandidatePreviewTheme(candResolved);
   applyFtbPreviewTheme(resolveTheme(mode, normalizeSurfaceTheme(config?.theme_ftb)));
   if (document.querySelector('.screenkb-preview')) {
@@ -206,6 +245,7 @@ function updateSkinThemeCard(
 export function setThemeMode(value: string | undefined): void {
   const mode = normalizeThemeMode(value);
   const current: ThemeConfig = {
+    ...lastThemeConfig,
     theme_mode: mode,
     theme_settings: readSurfaceFromUi('settingsThemeMenu', 'settingsThemeBtn'),
     theme_cand: readSurfaceFromUi('candThemeMenu', 'candThemeBtn'),
@@ -224,6 +264,7 @@ export function setSurfaceTheme(
   value: string | undefined
 ): void {
   const current: ThemeConfig = {
+    ...lastThemeConfig,
     theme_mode: readModeFromUi(),
     theme_settings: readSurfaceFromUi('settingsThemeMenu', 'settingsThemeBtn'),
     theme_cand: readSurfaceFromUi('candThemeMenu', 'candThemeBtn'),

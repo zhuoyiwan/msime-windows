@@ -15,6 +15,7 @@
 #include "fmt/xchar.h"
 #include "global/globals.h"
 #include "config/ime_config.h"
+#include "config/prefix_completion.h"
 #include "window/window_hook.h"
 #include "log/candidate_diag_log.h"
 #include "statistics/stats_pipe.h"
@@ -825,6 +826,9 @@ void RegisteredPipeMonitorThread(HANDLE clientPipe, UINT pipeRole, uint64_t hand
             SendToTsfWorkerThreadClientViaNamedpipe(
                 hello.client_id, Global::DataFromServerMsgTypeToTsfWorkerThread::SmartPunctuationSpaceConvertChanged,
                 GetConfiguredSmartPunctuationSpaceConvertEnabled() ? L"1" : L"0");
+            SendToTsfWorkerThreadClientViaNamedpipe(
+                hello.client_id, Global::DataFromServerMsgTypeToTsfWorkerThread::PrefixCompletionStartsChanged,
+                FormatPrefixCompletionWorkerPayload());
             SendToTsfWorkerThreadClientViaNamedpipe(
                 hello.client_id, Global::DataFromServerMsgTypeToTsfWorkerThread::SmartPunctuationDirectDigitChanged,
                 GetConfiguredSmartPunctuationDirectDigitEnabled() ? L"1" : L"0");

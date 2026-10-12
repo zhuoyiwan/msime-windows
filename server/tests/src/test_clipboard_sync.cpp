@@ -116,7 +116,6 @@ TEST_CASE(clipboard_sync_duplicate_event_and_identity_conflict_keep_existing_met
     const auto event = Event();
     REQUIRE_EQ(ClipboardSync::MergeReceived(history, event, "peer", "self"), ImportResult::Imported);
     REQUIRE_EQ(ClipboardSync::MergeReceived(history, event, "peer", "self"), ImportResult::Duplicate);
-    REQUIRE_EQ(ClipboardSync::MergeReceived(history, Event("different-id"), "peer", "self"), ImportResult::Duplicate);
     REQUIRE_EQ(ClipboardSync::MergeReceived(history, Event("id", "changed"), "peer", "self"),
                ImportResult::IdentityConflict);
     REQUIRE_EQ(ClipboardSync::MergeReceived(history, Event("id", "hello", "peer", 999), "peer", "self"),
@@ -125,6 +124,16 @@ TEST_CASE(clipboard_sync_duplicate_event_and_identity_conflict_keep_existing_met
     REQUIRE_EQ(history[0].id, event.id);
     REQUIRE_EQ(history[0].created_at, event.created_at);
     REQUIRE_EQ(history[0].text, event.text);
+}
+
+TEST_CASE(clipboard_sync_same_text_new_event_is_a_fresh_copy)
+{
+    std::vector<Record> history;
+    REQUIRE_EQ(ClipboardSync::MergeReceived(history, Event(), "peer", "self"), ImportResult::Imported);
+    REQUIRE_EQ(ClipboardSync::MergeReceived(history, Event("different-id"), "peer", "self"), ImportResult::Imported);
+    REQUIRE_EQ(history.size(), size_t{1});
+    REQUIRE_EQ(history[0].id, std::string("different-id"));
+    REQUIRE_EQ(ClipboardSync::MergeReceived(history, Event("different-id"), "peer", "self"), ImportResult::Duplicate);
 }
 
 TEST_CASE(clipboard_sync_bounds_history_and_orders_by_receipt)

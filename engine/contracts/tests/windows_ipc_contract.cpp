@@ -214,7 +214,8 @@ int main()
     CHECK(FanyImeWorkerReplyType::MidSentenceHelpcodeUppercaseChanged == 31);
     CHECK(FanyImeWorkerReplyType::VModeChanged == 32);
     CHECK(FanyImeWorkerReplyType::TrilingualCycleChanged == 33);
-    CHECK(FanyImeWorkerReplyType::MaxKnown == FanyImeWorkerReplyType::TrilingualCycleChanged);
+    CHECK(FanyImeWorkerReplyType::PrefixCompletionStartsChanged == 34u);
+    CHECK(FanyImeWorkerReplyType::MaxKnown == FanyImeWorkerReplyType::PrefixCompletionStartsChanged);
     // V 模式的形状规则，TSF（WCHAR）与 Server（char）共用。
     {
         using FanyImeVModeInput::Trigger;

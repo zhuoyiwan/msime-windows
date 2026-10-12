@@ -159,6 +159,8 @@ if(MSVC)
 endif()
 
 set(SRC_FILES
+    "./src/utils/wallpaper_palette.cpp"
+    "./src/utils/wallpaper_palette.h"
     "./src/ai/ai_assistant.cpp"
     "./src/ai/ai_assistant.h"
     "./src/ai/ai_assistant_cache.cpp"
@@ -341,7 +343,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE winhttp)
 target_link_libraries(${PROJECT_NAME} PRIVATE CURL::libcurl)
 target_link_libraries(${PROJECT_NAME} PRIVATE ZLIB::ZLIB)
 target_link_libraries(${PROJECT_NAME} PRIVATE msime_clipboard_lan)
-target_link_libraries(${PROJECT_NAME} PRIVATE d2d1 dwrite dwmapi shell32 shcore ole32 bcrypt)
+target_link_libraries(${PROJECT_NAME} PRIVATE d2d1 dwrite dwmapi shell32 shcore ole32 bcrypt windowscodecs)
 
 # The helper executables below already build at /W4. The server itself -- the process that owns
 # every network call, the WebView2 hosts and the skin loader -- was still at the default /W3.
@@ -464,6 +466,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 
 set(SETTINGS_EXECUTABLE_NAME "MetasequoiaImeSettings")
 add_executable(${SETTINGS_EXECUTABLE_NAME} WIN32
+    "./src/utils/wallpaper_palette.cpp"
+    "./src/utils/wallpaper_palette.h"
     "./src/settings/settings_app.cpp"
     "./src/settings/api_credential_test.cpp"
     "./src/settings/api_credential_test.h"
@@ -535,6 +539,7 @@ target_include_directories(${SETTINGS_EXECUTABLE_NAME}
     "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/include"
 )
 target_link_libraries(${SETTINGS_EXECUTABLE_NAME} PRIVATE
+    windowscodecs ole32
     msime_clipboard_lan
     MetasequoiaIme::Engine
     fmt::fmt

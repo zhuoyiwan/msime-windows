@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { applyThemeConfig, reapplyThemeConfig } from './theme';
+import { applyThemeConfig, applyWallpaperPalette, reapplyThemeConfig } from './theme';
 
 class FakeImage {
   src = '/assets/softkbd.png';
@@ -44,4 +44,19 @@ it('themes a preview page that loads after the snapshot was applied', async () =
   reapplyThemeConfig();
   await vi.dynamicImportSettled();
   expect(image.src).toBe('/assets/softkbd_light.png');
+});
+
+it('uses the supplied wallpaper palette and removes it when disabled', () => {
+  const setProperty = vi.fn();
+  const removeProperty = vi.fn();
+  document.documentElement.style.setProperty = setProperty;
+  document.documentElement.style.removeProperty = removeProperty;
+  const palette = { accent: 0x123456, surface: 0xfafafa, card: 0xeeeeee, border: 0xcccccc,
+    text: 0x111111, secondary: 0x444444, selected: 0xdddddd };
+  applyWallpaperPalette('light', { wallpaper_colors: true, wallpaper_palette: { light: palette, dark: palette } });
+  expect(setProperty).toHaveBeenCalledWith('--accent-color', '#123456');
+  expect(setProperty).toHaveBeenCalledWith('--text-color', '#111111');
+  applyWallpaperPalette('light', { wallpaper_colors: false });
+  expect(removeProperty).toHaveBeenCalledWith('--accent-color');
+  expect(removeProperty).toHaveBeenCalledWith('--text-color');
 });

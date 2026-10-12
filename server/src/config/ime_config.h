@@ -1,4 +1,6 @@
 #pragma once
+bool GetConfiguredWallpaperColors();
+bool SetConfiguredWallpaperColors(bool enabled);
 
 #include "engine/core/fuzzy_pinyin_options.h"
 #include "engine/core/scheme_type.h"

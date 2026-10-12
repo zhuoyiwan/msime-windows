@@ -1,4 +1,5 @@
 #include "window/tray_menu_presenter.h"
+#include "utils/wallpaper_palette.h"
 
 #include "config/ime_config.h"
 #include "defines/globals.h"
@@ -328,6 +329,14 @@ void TrayMenuPresenter::ApplyTheme()
         impl_->border = ColorFromRgb(0x3A3A3A);
         impl_->text = ColorFromRgb(0xE0E0E0);
         impl_->hover = ColorFromRgb(0x3B3B3B);
+    }
+    if (GetConfiguredWallpaperColors())
+    {
+        const auto wallpaper = GetWallpaperPalette(light);
+        impl_->fill = ColorFromRgb(wallpaper.surface);
+        impl_->border = ColorFromRgb(wallpaper.border);
+        impl_->text = ColorFromRgb(wallpaper.text);
+        impl_->hover = ColorFromRgb(wallpaper.selected);
     }
     RebuildScene();
     for (const auto &row : impl_->rows)

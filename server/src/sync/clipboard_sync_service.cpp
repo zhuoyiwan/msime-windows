@@ -10,6 +10,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <deque>
 #include <map>
 #include <mutex>
 #include <set>
@@ -26,6 +27,7 @@ struct Service
     HANDLE reset_event = nullptr;
     std::vector<ClipboardSync::PairedDevice> peers;
     std::map<std::string, std::vector<MsimeClipboardSync::Record>> pending;
+    std::deque<MsimeClipboardSync::Record> received;
     std::map<std::string, std::pair<ClipboardSync::DiscoveredPeer, std::chrono::steady_clock::time_point>> endpoints;
 };
 Service g_service;
@@ -111,9 +113,25 @@ ClipboardSync::TlsCallbacks Callbacks(const ClipboardSync::PairingStore &store)
                 if (!ClipboardHistory::IsSyncEnabled() || !authenticated->count(device) ||
                     !store.Authorize(authenticated->at(device), device, ClipboardSync::UnixNow()))
                     return false;
-                const auto result = ClipboardHistory::ImportRecord(record, device);
-                return result == ClipboardSync::ImportResult::Imported ||
-                       result == ClipboardSync::ImportResult::Duplicate;
+                ClipboardSync::ImportResult result;
+                {
+                    // 历史按文字合并后，旧 ID 也必须记住，避免丢失确认后的重传覆盖新复制。
+                    std::lock_guard<std::mutex> lock(g_service.mutex);
+                    for (const auto &seen : g_service.received)
+                        if (seen.id == record.id)
+                            return seen.origin_device == record.origin_device && seen.text == record.text &&
+                                   seen.hash == record.hash && seen.created_at == record.created_at;
+                    result = ClipboardHistory::ImportRecord(record, device);
+                    if (result != ClipboardSync::ImportResult::Imported &&
+                        result != ClipboardSync::ImportResult::Duplicate)
+                        return false;
+                    g_service.received.push_back(record);
+                    if (g_service.received.size() > MsimeClipboardSync::kMaxItems * 8)
+                        g_service.received.pop_front();
+                }
+                if (result == ClipboardSync::ImportResult::Imported)
+                    ClipboardMonitor::ApplyRemoteText(string_to_wstring(record.text));
+                return true;
             },
             [sent](const std::string &) {
                 std::lock_guard<std::mutex> lock(g_service.mutex);
@@ -299,6 +317,7 @@ void ClipboardSync::StopLanService()
     std::lock_guard<std::mutex> lock(g_service.mutex);
     g_service.peers.clear();
     g_service.pending.clear();
+    g_service.received.clear();
     g_service.endpoints.clear();
     if (g_service.reset_event)
     {

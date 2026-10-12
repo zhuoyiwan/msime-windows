@@ -211,6 +211,7 @@ inline std::atomic_bool SmartPunctuationSpaceConvertEnabled{false};
 // Default off: direct ASCII output for ',' '.' ':' after ASCII digits. Gated
 // in CCompositionProcessorEngine::ResolvePunctuation.
 inline std::atomic_bool SmartPunctuationDirectDigitEnabled{false};
+inline std::atomic<std::uint16_t> PrefixCompletionStarts{0};
 // Default off: direct ASCII output for ',' '.' ':' after ASCII letters. Gated
 // in CCompositionProcessorEngine::ResolvePunctuation.
 inline std::atomic_bool SmartPunctuationDirectLetterEnabled{false};

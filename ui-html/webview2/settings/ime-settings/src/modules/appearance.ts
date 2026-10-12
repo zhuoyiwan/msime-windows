@@ -564,6 +564,7 @@ export async function setupAppearance() {
 
   // 主题模式（全局）
   setupDropdownMenu('themeBtn', 'themeMenu', 'changeTheme', false, 'appearance.theme_mode');
+  setupDropdownMenu('wallpaperColorsBtn', 'wallpaperColorsMenu', 'changeWallpaperColors', false, 'appearance.wallpaper_colors', value => value === 'true');
   const themeSurfaceExpand = document.getElementById('themeSurfaceExpand');
   const themeSurfaceDetails = document.getElementById('themeSurfaceDetails');
   themeSurfaceExpand?.addEventListener('click', () => {
