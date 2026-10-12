@@ -1704,18 +1704,17 @@ var
   ResultCode: Integer;
 begin
   DeleteClipboardFirewallRule;
-  { The Server listens only after explicit opt-in. Restrict the rule to this
-    executable, private networks, the local subnet and the clipboard ports. }
+  { 用户开启共享才监听；兼容热点的公用/专用网络分类，仍限定程序、局域网和端口。 }
   if not Exec(ExpandConstant('{sys}\netsh.exe'),
     'advfirewall firewall add rule name="MetasequoiaIME Clipboard LAN" dir=in action=allow ' +
     'program="' + ExpandConstant('{commonpf64}\metasequoiaime\server\{#MyAppExeName}') + '" ' +
-    'protocol=TCP localport=49876 profile=private remoteip=localsubnet',
+    'protocol=TCP localport=49876 profile=private,public remoteip=localsubnet',
     '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
     Log('Clipboard LAN firewall rule could not be installed');
   if not Exec(ExpandConstant('{sys}\netsh.exe'),
     'advfirewall firewall add rule name="MetasequoiaIME Clipboard Discovery" dir=in action=allow ' +
     'program="' + ExpandConstant('{commonpf64}\metasequoiaime\server\{#MyAppExeName}') + '" ' +
-    'protocol=UDP localport=49877 profile=private remoteip=localsubnet',
+    'protocol=UDP localport=49877 profile=private,public remoteip=localsubnet',
     '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
     Log('Clipboard discovery firewall rule could not be installed');
 end;

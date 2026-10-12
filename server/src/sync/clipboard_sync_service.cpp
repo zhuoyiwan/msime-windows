@@ -363,5 +363,14 @@ std::string ClipboardSync::SettingsRequest(const std::string &action, const std:
     if (devices)
         for (const auto &peer : *devices)
             response["devices"].push_back({{"device", peer.key.device}, {"address", peer.address}});
+    if (action == "pair" && !ok && devices)
+    {
+        MsimeClipboardLan::PairingCode incoming;
+        if (MsimeClipboardLan::DecodePairingCode(code, incoming))
+            for (const auto &peer : *devices)
+                if (peer.key.device == incoming.device)
+                    response["message"] = "此设备已配对。一次扫码即可双向配对，不需要互扫；如互扫后无法连接，请在两端撤"
+                                          "销配对，再只扫描一次";
+    }
     return response.dump();
 }

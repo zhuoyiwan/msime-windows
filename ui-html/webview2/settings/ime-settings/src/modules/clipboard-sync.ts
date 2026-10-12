@@ -110,7 +110,9 @@ export function setupClipboardSync(): void {
       const row = document.createElement('li');
       const label = document.createElement('span'); label.className = 'clipboard-peer-label';
       const identity = document.createElement('strong'); identity.textContent = peer.device;
-      const address = document.createElement('small'); address.textContent = peer.address ? `连接地址 ${peer.address} · 自动更新` : '正在自动发现连接地址';
+      const address = document.createElement('small'); address.textContent = peer.address
+        ? `已保存地址 ${peer.address} · 自动更新；此项不代表当前已连接`
+        : '尚未获得连接地址 · 请确认两端共享已开启，或填写对方的局域网 IPv4 地址';
       label.append(identity, address);
       const remove = document.createElement('button');
       remove.type = 'button'; remove.className = 'clipboard-button clipboard-quiet'; remove.textContent = '撤销配对';
