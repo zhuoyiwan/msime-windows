@@ -109,9 +109,22 @@ std::vector<LatticePath> decode_robust_sentence(const std::string &raw, unsigned
             }
         }
         rank(choices);
-        size_t kept = 0;
+        // 先保留每种消费长度的最佳编辑边，避免同读音的短边挤掉漏字/多字的完整解释。
+        std::unordered_set<size_t> selected;
+        std::unordered_set<size_t> ends;
+        for (size_t i = 0; i < choices.size(); ++i)
+            if (choices[i].cost && ends.insert(choices[i].end).second)
+                selected.insert(i);
+        for (size_t i = 0; i < choices.size() && selected.size() < 16; ++i)
+            if (choices[i].cost)
+                selected.insert(i);
+        size_t at = 0;
         choices.erase(std::remove_if(choices.begin(), choices.end(),
-                                     [&](const auto &choice) { return choice.cost && ++kept > 16; }),
+                                     [&](const auto &choice) {
+                                         const bool keep = !choice.cost || selected.count(at) != 0;
+                                         ++at;
+                                         return !keep;
+                                     }),
                       choices.end());
     }
     std::vector<LetterLexeme> edges;

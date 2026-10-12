@@ -764,11 +764,13 @@ std::vector<WordItem> QuanpinDictionary::query_exact(const std::string &raw_inpu
     }
     // 普通整句无法解释的长输入才进入有界原字母词图，短输入与手工分隔符保持原规则。
     const bool invalid_head =
-        segments.empty() || (raw_input.size() >= 8 && autocorrect_types && segments.size() >= 2 &&
-                             !std::all_of(segments.begin(), segments.end() - 1, [](const auto &part) {
-                                 return quanpin::intact_pinyin_set().count(part) != 0;
-                             }));
-    if (invalid_head && segmentation.empty() && autocorrect_types && sentence_association_.word_lattice)
+        segments.empty() ||
+        (raw_input.size() >= 8 &&
+         autocorrect_types && (!std::all_of(segments.begin(), segments.end() - 1, [](const auto &part) {
+             return quanpin::intact_pinyin_set().count(part) != 0;
+         }) || quanpin::prefix_pinyin_set().count(segments.back()) == 0));
+    if (invalid_head && raw_input.find('\'') == std::string::npos && autocorrect_types &&
+        sentence_association_.word_lattice)
     {
         quanpin::WordLatticeOptions options;
         options.language_model = language_model_;

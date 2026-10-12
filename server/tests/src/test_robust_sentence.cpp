@@ -1,5 +1,6 @@
 #include "tests/includes/test_framework.h"
 #include "engine/quanpin/quanpin_dictionary.h"
+#include "engine/core/input_session.h"
 #include "engine/quanpin/quanpin_utils.h"
 #include <algorithm>
 #include <chrono>
@@ -40,4 +41,23 @@ TEST_CASE(RobustSentenceShippedDictionaryCorrections)
         if (row.pinyin == raw && row.sentence_association && quanpin::is_complete_pinyin_input(row.canonical_pinyin))
             ++complete;
     REQUIRE(complete >= 2);
+    for (const std::string input : {"woxiangqushanngk", "wixiabgqusahngk", "wixabgqusahngke"})
+    {
+        metasequoia::InputSession session(SchemeType::Quanpin, all, false, true, false);
+        session.set_sentence_association(options);
+        for (char letter : input)
+            REQUIRE(session.handle_character(letter).handled);
+        const auto &candidates = session.candidates();
+        std::cout << "session " << input << ": ";
+        for (size_t i = 0; i < (std::min)(candidates.size(), size_t{6}); ++i)
+            std::cout << candidates[i].word << " | ";
+        std::cout << '\n';
+        const auto end = candidates.begin() + (std::min)(candidates.size(), size_t{6});
+        const auto selected =
+            std::find_if(candidates.begin(), end, [](const auto &row) { return row.word == "我想去上课"; });
+        REQUIRE(selected != end);
+        const auto result = session.select_candidate(static_cast<size_t>(selected - candidates.begin()));
+        REQUIRE(result.commit == std::optional<std::string>("我想去上课"));
+        REQUIRE(session.preedit().empty());
+    }
 }
