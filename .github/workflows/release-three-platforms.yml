@@ -178,6 +178,8 @@ jobs:
           security create-keychain -p "$password" "$keychain"
           security set-keychain-settings -lut 900 "$keychain"
           security unlock-keychain -p "$password" "$keychain"
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -d user -s "$keychain"
           trap 'hdiutil detach -quiet "$mount" || true; security delete-keychain "$keychain" || true' EXIT
           MSIME_LOCAL_VERIFY_ONLY=1 MSIME_LOCAL_CI_NONINTERACTIVE=1 MSIME_LOCAL_KEYCHAIN="$keychain" MSIME_LOCAL_KEYCHAIN_PASSWORD="$password" MSIME_LOCAL_APPLICATIONS_DIR="$RUNNER_TEMP/msime-local-applications" bash "$mount/安装 zhuoyiwan 版.command"
           test -f "$mount/zhuoyiwan 本机安装说明.md"
