@@ -1,38 +1,356 @@
-name: zhuoyiwan three-platform release
-
-on:
+name: zhuoyiwan cloud three-platform release
+'on':
   workflow_dispatch:
     inputs:
       source_sha:
-        description: zhuoyiwan/msime 的完整源码提交 SHA
+        description: zhuoyiwan/msime 完整提交 SHA
         required: true
         type: string
       release_tag:
-        description: 已暂存 Windows 与 Android 安装包的草稿 Release tag
+        description: 指向当前 Windows 提交的未发布草稿 tag
         required: true
         type: string
-      reuse_run:
-        description: 可选，复用本仓已成功原生构建的 run ID（只重打包脚本）
-        required: false
-        default: ''
+      windows_revision:
+        description: Windows 改版修订号
+        required: true
+        default: '9'
         type: string
-      built_source_sha:
-        description: 复用时必填，原生二进制的完整源码 SHA
-        required: false
-        default: ''
-        type: string
-
 permissions:
   contents: write
   actions: read
-
 concurrency:
-  group: zhuoyiwan-three-platform-release
+  group: zhuoyiwan-cloud-release
   cancel-in-progress: false
-
 jobs:
-  macos:
+  validate:
     if: github.repository == 'zhuoyiwan/msime-windows'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.sha }}
+        persist-credentials: false
+    - name: Validate fixed sources and empty draft
+      run: |
+        set -euo pipefail
+        [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+        [[ "$RELEASE_TAG" =~ ^zhuoyiwan-[0-9]{8}-r[0-9]+$ ]]
+        [[ "$(gh api "repos/zhuoyiwan/msime/commits/$SOURCE_SHA" --jq .sha)" == "$SOURCE_SHA" ]]
+        [[ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" == true ]]
+        [[ "$(gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" --jq .object.sha)" == "$GITHUB_SHA" ]]
+        python3 ui-html/scripts/sync-contracts.py --check
+        python3 -m unittest discover -s tests -p test_product_lock.py
+    - name: Verify release provenance and safe resume
+      run: python3 -m unittest discover -s tests -p test_fork_release_metadata.py
+  tsf:
+    name: Windows ${{ matrix.name }}
+    runs-on: windows-2025
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - name: x64
+          architecture: x64
+          triplet: x64-windows-static
+        - name: Win32
+          architecture: Win32
+          triplet: x86-windows-static
+    steps:
+    - name: Check out source
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.sha }}
+        submodules: recursive
+        persist-credentials: false
+    - name: Stamp PE version
+      shell: pwsh
+      run: |-
+        python scripts/apply_version.py
+        python scripts/apply_version.py --check
+    - name: Restore dependency binaries
+      id: vcpkg-cache
+      uses: ./.github/actions/vcpkg-cache
+      with:
+        scope: tip-${{ matrix.triplet }}
+    - name: Install dependencies
+      shell: pwsh
+      working-directory: windows
+      run: vcpkg install --triplet ${{ matrix.triplet }}
+    - name: Save dependency binaries before compiling
+      if: steps.vcpkg-cache.outputs.matched-key != format('{0}-complete', steps.vcpkg-cache.outputs.key)
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: ${{ steps.vcpkg-cache.outputs.path }}
+        key: ${{ steps.vcpkg-cache.outputs.key }}-complete
+    - name: Configure
+      shell: pwsh
+      run: |
+        cmake -S windows -B windows/build -A ${{ matrix.architecture }} -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }}
+    - name: Build
+      shell: pwsh
+      run: cmake --build windows/build --config Release --parallel
+    - name: Check the Release binary and symbols
+      shell: pwsh
+      run: ./scripts/ci/check-tsf-dll.ps1 -BuildDir 'windows/build'
+    - name: Test the wire contract on this architecture
+      run: ctest --no-tests=error --test-dir windows/build -C Release --output-on-failure
+    - name: Check the installer language file lands where ISCC looks
+      if: ${{ matrix.name == 'x64' }}
+      shell: pwsh
+      run: ./scripts/ci/check-inno-language.ps1
+    - name: Test WebView2 runtime detection
+      if: ${{ matrix.name == 'x64' }}
+      shell: pwsh
+      run: ./installer/tests/webview2-runtime.ps1
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: fork-tsf-${{ matrix.name }}
+        path: windows/build/Release
+        if-no-files-found: error
+        retention-days: 7
+    needs:
+    - validate
+  server:
+    name: Server
+    needs:
+    - validate
+    runs-on: windows-2025
+    timeout-minutes: 120
+    env:
+      SCCACHE_GHA_ENABLED: 'true'
+      SCCACHE_IGNORE_SERVER_IO_ERROR: '1'
+    steps:
+    - name: Check out source
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.sha }}
+        submodules: recursive
+        persist-credentials: false
+    - name: Restore dependency binaries
+      id: vcpkg-cache
+      uses: ./.github/actions/vcpkg-cache
+      with:
+        scope: server-x64-windows-and-static-md
+    - name: Set up MSVC environment
+      uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
+    - name: Verify direct MSVC fallback
+      shell: pwsh
+      run: ./scripts/ci/test-sccache-fallback.ps1
+    - name: Set up sccache
+      id: sccache
+      continue-on-error: true
+      uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba
+    - name: Install Boost
+      shell: pwsh
+      run: ./scripts/ci/install-boost.ps1
+    - name: Save Boost binaries before configuring
+      if: steps.vcpkg-cache.outputs.matched-key != format('{0}-complete', steps.vcpkg-cache.outputs.key) && steps.vcpkg-cache.outputs.matched-key
+        != format('{0}-boost', steps.vcpkg-cache.outputs.key)
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: ${{ steps.vcpkg-cache.outputs.path }}
+        key: ${{ steps.vcpkg-cache.outputs.key }}-boost
+    - name: Configure
+      shell: pwsh
+      run: |
+        $cmakeArgs = @(
+          '-S', 'server', '-B', 'server/build-release', '-G', 'Ninja Multi-Config',
+          "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake",
+          '-DVCPKG_TARGET_TRIPLET=x64-windows'
+        )
+        $cmakeArgs += @(./scripts/ci/cmake-sccache-args.ps1 -SetupOutcome '${{ steps.sccache.outcome }}')
+        cmake @cmakeArgs
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    - name: Save dependency binaries before compiling
+      if: steps.vcpkg-cache.outputs.matched-key != format('{0}-complete', steps.vcpkg-cache.outputs.key)
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: ${{ steps.vcpkg-cache.outputs.path }}
+        key: ${{ steps.vcpkg-cache.outputs.key }}-complete
+    - name: Build
+      shell: pwsh
+      run: cmake --build server/build-release --config Release --parallel
+    - name: Report sccache hit rate
+      if: ${{ !cancelled() && steps.sccache.outcome == 'success' }}
+      continue-on-error: true
+      shell: pwsh
+      run: sccache --show-stats
+    - name: Check the Release binaries and symbols
+      shell: pwsh
+      run: ./scripts/ci/check-server-binaries.ps1 -BuildDir server/build-release/bin/Release
+    - name: Test with the product's exact data
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: ./scripts/ci/test-server.ps1 -ServerRoot server -StagingRoot "$env:RUNNER_TEMP/product-data" -BuildDir build-release
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: fork-server
+        path: server/build-release/bin/Release
+        if-no-files-found: error
+        retention-days: 7
+  ui:
+    name: Build settings page
+    needs:
+    - validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.sha }}
+        persist-credentials: false
+    - name: Verify the shipped pages carry the engine's contract
+      run: python3 ui-html/scripts/sync-contracts.py --check
+    - name: Set up pnpm
+      uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+      with:
+        version: 10
+    - name: Set up Node
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      with:
+        node-version: 22
+        cache: pnpm
+        cache-dependency-path: ui-html/webview2/settings/ime-settings/pnpm-lock.yaml
+    - name: Install and build the settings page
+      working-directory: ui-html/webview2/settings/ime-settings
+      run: |-
+        pnpm install --frozen-lockfile
+        pnpm build
+
+        pnpm test
+    - name: Upload the web assets
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: fork-webview2
+        path: |
+          ui-html/webview2/candwnd
+          ui-html/webview2/ftb
+          ui-html/webview2/menu
+          ui-html/webview2/shared
+          ui-html/webview2/settings/ime-settings/dist
+        if-no-files-found: error
+  windows-package:
+    needs:
+    - tsf
+    - server
+    - ui
+    runs-on: windows-2025
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      REVISION: ${{ inputs.windows_revision }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.sha }}
+        persist-credentials: false
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        name: fork-tsf-x64
+        path: windows/build64-release/Release
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        name: fork-tsf-Win32
+        path: windows/build32-release/Release
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        name: fork-server
+        path: server/build-release/bin/Release
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        name: fork-webview2
+        path: ui-html/webview2
+    - name: Package unsigned fork installer with verified resources
+      shell: pwsh
+      run: ./scripts/ci/package-fork.ps1 -ReleaseTag $env:RELEASE_TAG -Revision ([int]$env:REVISION)
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: fork-windows-package
+        path: dist/
+        if-no-files-found: error
+        retention-days: 7
+  android:
+    needs:
+    - validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      MSIME_ANDROID_ABIS: arm64-v8a
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ inputs.source_sha }}
+        persist-credentials: false
+        repository: zhuoyiwan/msime
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.sha }}
+        persist-credentials: false
+        path: release-tools
+    - name: Set up Java
+      uses: actions/setup-java@da6c71f2eab6a3d5b8fef5b93f4c301a7378352e
+      with:
+        distribution: temurin
+        java-version: '17'
+    - name: Prepare Android and Rust tools
+      run: |
+        set -euo pipefail
+        rustup toolchain install
+        rustup target add aarch64-linux-android
+        { yes || true; } | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --install 'ndk;28.2.13676358' 'platforms;android-36' 'build-tools;35.0.0' >/dev/null
+        bash platforms/windows/bootstrap-vcpkg.sh
+    - name: Run Rust engine tests and Clippy
+      run: |
+        set -euo pipefail
+        cargo test -p msime-engine --lib --locked
+        cargo clippy -p msime-engine --lib --locked -- -D warnings
+    - name: Build and sign fixed native ARM64 APK
+      env:
+        RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+        MSIME_ANDROID_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+      run: |
+        set -euo pipefail
+        [[ -n "$RELEASE_KEYSTORE_BASE64" && -n "$MSIME_ANDROID_RELEASE_KEYSTORE_PASSWORD" ]]
+        export MSIME_ANDROID_RELEASE_KEYSTORE="$RUNNER_TEMP/msime-release.p12"
+        trap 'rm -f "$MSIME_ANDROID_RELEASE_KEYSTORE"' EXIT
+        printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 --decode > "$MSIME_ANDROID_RELEASE_KEYSTORE"
+        resource_dir="$(cargo run --quiet -p msime-client-core --example install_resources --locked -- target/resources)"
+        export MSIME_EDITION=full
+        bash platforms/android/build-apk.sh "$resource_dir"
+        cd platforms/android/gradle-app
+        ./gradlew lintFullRelease --no-daemon
+        cd ../../..
+        mkdir -p dist
+        apk=target/android/msime-android.apk
+        tools="$ANDROID_SDK_ROOT/build-tools/35.0.0"
+        cert="$("$tools/apksigner" verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+        [[ "$cert" == 2cc60b29966625bc9834128a71bd1d7702d3137f7bd791d5093b9b68197a3385 ]]
+        badging="$("$tools/aapt" dump badging "$apk")"
+        version="$(sed -n "s/^package:.*versionName='\([^']*\)'.*/\1/p" <<< "$badging")"
+        code="$(sed -n "s/^package:.*versionCode='\([^']*\)'.*/\1/p" <<< "$badging")"
+        [[ "$version" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-zhuoyiwan-r([0-9]+)$ ]]
+        asset="MetasequoiaIME_Android_v${BASH_REMATCH[1]}-zhuoyiwan-arm64-r${BASH_REMATCH[2]}-signed.apk"
+        cp "$apk" "dist/$asset"
+        python3 release-tools/scripts/ci/fork-release-metadata.py record --platform android --directory dist --source "$SOURCE_SHA" --asset "$asset" --version "$version" --version-code "$code" --certificate "$cert"
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: fork-android-package
+        path: dist/
+        if-no-files-found: error
+        retention-days: 7
+  macos:
     runs-on: macos-15
     timeout-minutes: 120
     env:
@@ -41,192 +359,260 @@ jobs:
       GH_REPO: ${{ github.repository }}
       SOURCE_SHA: ${{ inputs.source_sha }}
       RELEASE_TAG: ${{ inputs.release_tag }}
-      REUSE_RUN: ${{ inputs.reuse_run }}
-      BUILT_SOURCE_SHA: ${{ inputs.built_source_sha }}
+      REUSE_RUN: ''
+      BUILT_SOURCE_SHA: ''
     steps:
-      - name: Check out fixed native macOS source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: zhuoyiwan/msime
-          ref: ${{ inputs.source_sha }}
-          persist-credentials: false
-
-      - name: Validate source and staged release
-        run: |
-          set -euo pipefail
-          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
-          [[ "$RELEASE_TAG" =~ ^zhuoyiwan-[0-9]{8}-r[0-9]+$ ]]
-          [[ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" == true ]]
-          gh release download "$RELEASE_TAG" --pattern '*.exe' --pattern '*.apk' --pattern 'release-provenance.json' --dir staged
-          python3 - <<'PY'
-          import hashlib, json, pathlib, os
-          root = pathlib.Path('staged')
-          manifest = json.loads((root / 'release-provenance.json').read_text())
-          assert manifest['macos_source_commit'] == os.environ['SOURCE_SHA']
-          for platform in ('windows', 'android'):
-              item = manifest[platform]
-              path = root / item['asset']
-              assert path.is_file(), path
-              assert hashlib.sha256(path.read_bytes()).hexdigest() == item['sha256'], path
-          assert len(list(root.glob('*.exe'))) == 1
-          assert len(list(root.glob('*.apk'))) == 1
-          PY
-
-      - name: Restore fixed native package for script-only recovery
-        if: inputs.reuse_run != ''
-        run: |
-          set -euo pipefail
-          [[ "$REUSE_RUN" =~ ^[0-9]+$ ]]
-          [[ "$BUILT_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          git fetch origin "$BUILT_SOURCE_SHA"
-          python3 - <<'PY'
-          import os, subprocess
-          allowed = {
-              'platforms/macos/scripts/install-local-fork.command',
-              'platforms/macos/LOCAL-FORK-INSTALL.md',
-              '.agents/notes/implemented/process/2026-10-12-fork-three-platform-release.md',
-          }
-          changed = set(subprocess.check_output([
-              'git', 'diff', '--name-only', os.environ['BUILT_SOURCE_SHA'], os.environ['SOURCE_SHA']
-          ], text=True).splitlines())
-          assert changed <= allowed, changed - allowed
-          PY
-          gh api "repos/$GH_REPO/actions/runs/$REUSE_RUN/jobs" --jq '.jobs[].steps[] | select(.name == "Build native universal DMG") | .conclusion' | grep -x success
-          mkdir -p target/macos-package/dist
-          gh run download "$REUSE_RUN" --name native-macos-universal --dir target/macos-package/dist
-          (cd target/macos-package/dist && shasum -a 256 -c SHA256SUMS)
-          version="$(tr -d '[:space:]' < platforms/macos/version.txt)"
-          original="$PWD/target/macos-package/dist/msime-macos-${version}-universal.dmg"
-          hdiutil convert "$original" -format UDRW -o "$RUNNER_TEMP/msime-repack.dmg"
-          mount="$RUNNER_TEMP/msime-repack-mount"
-          mkdir -p "$mount"
-          hdiutil attach -quiet -nobrowse -mountpoint "$mount" "$RUNNER_TEMP/msime-repack.dmg"
-          trap 'hdiutil detach -quiet "$mount" || true' EXIT
-          cp platforms/macos/scripts/install-local-fork.command "$mount/安装 zhuoyiwan 版.command"
-          chmod +x "$mount/安装 zhuoyiwan 版.command"
-          cp platforms/macos/LOCAL-FORK-INSTALL.md "$mount/zhuoyiwan 本机安装说明.md"
-          hdiutil detach -quiet "$mount"
-          trap - EXIT
-          hdiutil convert "$RUNNER_TEMP/msime-repack.dmg" -format UDZO -imagekey zlib-level=9 -ov -o "$original"
-          (cd target/macos-package/dist && shasum -a 256 -- *.dmg *.zip > SHA256SUMS)
-
-      - name: Install dependencies
-        if: inputs.reuse_run == ''
-        run: |
-          brew install nlohmann-json
-          corepack enable
-          rustup target add aarch64-apple-darwin x86_64-apple-darwin
-          xcodebuild -version
-
-      - name: Cache pinned Sparkle archive
-        if: inputs.reuse_run == ''
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.temp }}/sparkle-archive
-          key: sparkle-2.9.6-${{ runner.os }}-${{ hashFiles('platforms/macos/CMakeLists.txt') }}
-
-      - name: Prepare pinned Sparkle
-        if: inputs.reuse_run == ''
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/sparkle-archive"
-          archive="$RUNNER_TEMP/sparkle-archive/Sparkle-2.9.6.tar.xz"
-          if [[ ! -f "$archive" ]]; then
-            curl --fail --location --retry 3 https://github.com/sparkle-project/Sparkle/releases/download/2.9.6/Sparkle-2.9.6.tar.xz --output "$archive"
-          fi
-          printf '%s  %s\n' '52bf9e88cdd972fc0c81501377a880e90d47031bd8ca5462488f843e2609e192' "$archive" | shasum -a 256 --check
-          mkdir -p "$RUNNER_TEMP/sparkle"
-          tar -xJf "$archive" -C "$RUNNER_TEMP/sparkle"
-          test -d "$RUNNER_TEMP/sparkle/Sparkle.framework"
-          echo "MSIME_SPARKLE_ROOT=$RUNNER_TEMP/sparkle" >> "$GITHUB_ENV"
-
-      - name: Fetch locked gloss tables
-        if: inputs.reuse_run == ''
-        run: |
-          python3 scripts/fetch_offline_glosses.py
-          python3 scripts/fetch_gloss_tables.py
-
-      - name: Build native universal DMG
-        if: inputs.reuse_run == ''
-        run: |
-          set -euo pipefail
-          bash -n platforms/macos/scripts/install-local-fork.command
-          bash platforms/macos/package-release.sh --editions full
-          ctest --test-dir target/macos-release --no-tests=error --output-on-failure -R '^(bundle-contents|backend-library-load|update-controller|shortcut)$'
-
-      - name: Preserve native DMG before installation checks
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: native-macos-universal
-          path: target/macos-package/dist/
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Verify local certificate installation path
-        timeout-minutes: 5
-        run: |
-          set -euo pipefail
-          dmg=(target/macos-package/dist/*.dmg)
-          [[ ${#dmg[@]} == 1 ]]
-          mount="$RUNNER_TEMP/msime-verify-mount"
-          mkdir -p "$mount"
-          hdiutil attach -quiet -nobrowse -readonly -mountpoint "$mount" "${dmg[0]}"
-          keychain="$RUNNER_TEMP/msime-ci.keychain-db"
-          password="$(openssl rand -hex 24)"
-          echo "::add-mask::$password"
-          security create-keychain -p "$password" "$keychain"
-          security set-keychain-settings -lut 900 "$keychain"
-          security unlock-keychain -p "$password" "$keychain"
-          security list-keychains -d user -s "$keychain"
-          security default-keychain -d user -s "$keychain"
-          trap 'hdiutil detach -quiet "$mount" || true; security delete-keychain "$keychain" || true' EXIT
-          MSIME_LOCAL_VERIFY_ONLY=1 MSIME_LOCAL_CI_NONINTERACTIVE=1 MSIME_LOCAL_KEYCHAIN="$keychain" MSIME_LOCAL_KEYCHAIN_PASSWORD="$password" MSIME_LOCAL_APPLICATIONS_DIR="$RUNNER_TEMP/msime-local-applications" bash "$mount/安装 zhuoyiwan 版.command"
-          test -f "$mount/zhuoyiwan 本机安装说明.md"
-          local_app="$RUNNER_TEMP/msime-local-applications/MSIME-zhuoyiwan.app"
-          input_method="$local_app/Contents/Resources/水杉输入法.app"
-          codesign --verify --deep --strict "$local_app"
-          codesign --verify --deep --strict "$input_method"
-          codesign -dv --verbose=4 "$input_method" 2>&1 | grep -F 'Authority=MSIME zhuoyiwan Local Code Signing'
-          registered=0
-          "$input_method/Contents/MacOS/水杉输入法" --input-source-registered || registered=$?
-          [[ "$registered" == 0 || "$registered" == 3 ]]
-          echo '本机自签名路径通过；CI 未验收普通用户登录会话中的输入源注册和中文候选。' >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Assemble all three verified packages
-        run: |
-          set -euo pipefail
-          mkdir -p release-assets
-          version="$(tr -d '[:space:]' < platforms/macos/version.txt)"
-          cp "target/macos-package/dist/msime-macos-${version}-universal.dmg" "release-assets/MetasequoiaIME_macOS_v${version}-zhuoyiwan-universal-local.dmg"
-          cp "target/macos-package/dist/msime-macos-${version}-dsym.zip" release-assets/
-          cp staged/*.exe staged/*.apk staged/release-provenance.json release-assets/
-          python3 - <<'PY'
-          import json, os, pathlib
-          path = pathlib.Path('release-assets/release-provenance.json')
-          manifest = json.loads(path.read_text())
-          manifest['workflow_commit'] = os.environ['GITHUB_SHA']
-          manifest['workflow_run'] = os.environ['GITHUB_SERVER_URL'] + '/' + os.environ['GITHUB_REPOSITORY'] + '/actions/runs/' + os.environ['GITHUB_RUN_ID']
-          if os.environ['REUSE_RUN']:
-              manifest['macos_binary_source_commit'] = os.environ['BUILT_SOURCE_SHA']
-              manifest['macos_native_build_run'] = os.environ['GITHUB_SERVER_URL'] + '/' + os.environ['GITHUB_REPOSITORY'] + '/actions/runs/' + os.environ['REUSE_RUN']
-          path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n')
-          PY
-          cp platforms/macos/LOCAL-FORK-INSTALL.md release-assets/MACOS-INSTALL.md
-          cd release-assets
-          shasum -a 256 -- *.exe *.apk *.dmg *.zip > SHA256SUMS.txt
-          shasum -a 256 -c SHA256SUMS.txt
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: zhuoyiwan-three-platforms
-          path: release-assets/
-          if-no-files-found: error
-
-      - name: Add macOS package to the draft Release
-        run: |
-          set -euo pipefail
-          [[ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" == true ]]
-          gh release upload "$RELEASE_TAG" release-assets/*.dmg release-assets/*.zip release-assets/SHA256SUMS.txt release-assets/MACOS-INSTALL.md release-assets/release-provenance.json --clobber
-          echo "三端产物已暂存到草稿 Release：${RELEASE_TAG}。发布前需核对运行结果与资产校验和。" >> "$GITHUB_STEP_SUMMARY"
+    - name: Check out fixed native macOS source
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: zhuoyiwan/msime
+        ref: ${{ inputs.source_sha }}
+        persist-credentials: false
+    - name: Install dependencies
+      run: |
+        brew install nlohmann-json
+        corepack enable
+        rustup target add aarch64-apple-darwin x86_64-apple-darwin
+        xcodebuild -version
+    - name: Cache pinned Sparkle archive
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: ${{ runner.temp }}/sparkle-archive
+        key: sparkle-2.9.6-${{ runner.os }}-${{ hashFiles('platforms/macos/CMakeLists.txt') }}
+    - name: Prepare pinned Sparkle
+      run: |
+        set -euo pipefail
+        mkdir -p "$RUNNER_TEMP/sparkle-archive"
+        archive="$RUNNER_TEMP/sparkle-archive/Sparkle-2.9.6.tar.xz"
+        if [[ ! -f "$archive" ]]; then
+          curl --fail --location --retry 3 https://github.com/sparkle-project/Sparkle/releases/download/2.9.6/Sparkle-2.9.6.tar.xz --output "$archive"
+        fi
+        printf '%s  %s\n' '52bf9e88cdd972fc0c81501377a880e90d47031bd8ca5462488f843e2609e192' "$archive" | shasum -a 256 --check
+        mkdir -p "$RUNNER_TEMP/sparkle"
+        tar -xJf "$archive" -C "$RUNNER_TEMP/sparkle"
+        test -d "$RUNNER_TEMP/sparkle/Sparkle.framework"
+        echo "MSIME_SPARKLE_ROOT=$RUNNER_TEMP/sparkle" >> "$GITHUB_ENV"
+    - name: Fetch locked gloss tables
+      run: |
+        python3 scripts/fetch_offline_glosses.py
+        python3 scripts/fetch_gloss_tables.py
+    - name: Build native universal DMG
+      run: |
+        set -euo pipefail
+        bash -n platforms/macos/scripts/install-local-fork.command
+        bash platforms/macos/package-release.sh --editions full
+        ctest --test-dir target/macos-release --no-tests=error --output-on-failure -R '^(bundle-contents|backend-library-load|update-controller|shortcut)$'
+    - name: Preserve native DMG before installation checks
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: native-macos-universal
+        path: target/macos-package/dist/
+        if-no-files-found: error
+        retention-days: 7
+    - name: Verify local certificate installation path
+      timeout-minutes: 5
+      run: |
+        set -euo pipefail
+        dmg=(target/macos-package/dist/*.dmg)
+        [[ ${#dmg[@]} == 1 ]]
+        mount="$RUNNER_TEMP/msime-verify-mount"
+        mkdir -p "$mount"
+        hdiutil attach -quiet -nobrowse -readonly -mountpoint "$mount" "${dmg[0]}"
+        keychain="$RUNNER_TEMP/msime-ci.keychain-db"
+        password="$(openssl rand -hex 24)"
+        echo "::add-mask::$password"
+        security create-keychain -p "$password" "$keychain"
+        security set-keychain-settings -lut 900 "$keychain"
+        security unlock-keychain -p "$password" "$keychain"
+        security list-keychains -d user -s "$keychain"
+        security default-keychain -d user -s "$keychain"
+        trap 'hdiutil detach -quiet "$mount" || true; security delete-keychain "$keychain" || true' EXIT
+        MSIME_LOCAL_VERIFY_ONLY=1 MSIME_LOCAL_CI_NONINTERACTIVE=1 MSIME_LOCAL_KEYCHAIN="$keychain" MSIME_LOCAL_KEYCHAIN_PASSWORD="$password" MSIME_LOCAL_APPLICATIONS_DIR="$RUNNER_TEMP/msime-local-applications" bash "$mount/安装 zhuoyiwan 版.command"
+        test -f "$mount/zhuoyiwan 本机安装说明.md"
+        local_app="$RUNNER_TEMP/msime-local-applications/MSIME-zhuoyiwan.app"
+        input_method="$local_app/Contents/Resources/水杉输入法.app"
+        codesign --verify --deep --strict "$local_app"
+        codesign --verify --deep --strict "$input_method"
+        codesign -dv --verbose=4 "$input_method" 2>&1 | grep -F 'Authority=MSIME zhuoyiwan Local Code Signing'
+        registered=0
+        "$input_method/Contents/MacOS/水杉输入法" --input-source-registered || registered=$?
+        [[ "$registered" == 0 || "$registered" == 3 ]]
+        echo '本机自签名路径通过；CI 未验收普通用户登录会话中的输入源注册和中文候选。' >> "$GITHUB_STEP_SUMMARY"
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.sha }}
+        persist-credentials: false
+        path: release-tools
+    - name: Record native universal package
+      run: |
+        set -euo pipefail
+        mkdir -p dist
+        version="$(tr -d '[:space:]' < platforms/macos/version.txt)"
+        asset="MetasequoiaIME_macOS_v${version}-zhuoyiwan-universal-local.dmg"
+        cp "target/macos-package/dist/msime-macos-${version}-universal.dmg" "dist/$asset"
+        cp target/macos-package/dist/*-dsym.zip dist/
+        cp platforms/macos/LOCAL-FORK-INSTALL.md dist/MACOS-INSTALL.md
+        python3 release-tools/scripts/ci/fork-release-metadata.py record --platform macos --directory dist --source "$SOURCE_SHA" --asset "$asset" --version "$version"
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: fork-macos-package
+        path: dist/
+        if-no-files-found: error
+        retention-days: 7
+    needs:
+    - validate
+  publish:
+    needs:
+    - windows-package
+    - android
+    - macos
+    - android-device
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.sha }}
+        persist-credentials: false
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        pattern: fork-*-package
+        path: release-assets
+        merge-multiple: true
+    - name: Validate artifacts and publish the three-platform prerelease
+      run: |
+        set -euo pipefail
+        python3 scripts/ci/fork-release-metadata.py assemble --directory release-assets
+        [[ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" == true ]]
+        [[ "$(gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" --jq .object.sha)" == "$GITHUB_SHA" ]]
+        gh api "repos/$GH_REPO/releases/tags/$RELEASE_TAG" > "$RUNNER_TEMP/existing-release.json"
+        python3 scripts/ci/fork-release-metadata.py resume --directory release-assets --release-json "$RUNNER_TEMP/existing-release.json" > "$RUNNER_TEMP/missing-assets.txt"
+        while IFS= read -r asset; do
+          gh release upload "$RELEASE_TAG" "release-assets/$asset"
+        done < "$RUNNER_TEMP/missing-assets.txt"
+        gh api "repos/$GH_REPO/releases/tags/$RELEASE_TAG" > "$RUNNER_TEMP/release.json"
+        python3 - <<'PY'
+        import hashlib,json,os,pathlib
+        root=pathlib.Path('release-assets')
+        release=json.loads(pathlib.Path(os.environ['RUNNER_TEMP'],'release.json').read_text())
+        assets={item['name']:item for item in release['assets']}
+        for path in root.iterdir():
+            expected='sha256:'+hashlib.sha256(path.read_bytes()).hexdigest()
+            assert assets[path.name]['digest']==expected, path.name
+        PY
+        gh release edit "$RELEASE_TAG" --draft=false --prerelease --latest=false
+        echo "Published https://github.com/$GH_REPO/releases/tag/$RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: fork-three-platforms
+        path: release-assets/
+        if-no-files-found: error
+        retention-days: 7
+  android-device:
+    name: Android device (API ${{ matrix.api }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - api: 28
+          smoke: --core
+        - api: 35
+          smoke: ''
+    env:
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      MSIME_ANDROID_ABIS: x86_64
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ inputs.source_sha }}
+        persist-credentials: false
+        repository: zhuoyiwan/msime
+    - uses: actions/setup-java@da6c71f2eab6a3d5b8fef5b93f4c301a7378352e
+      with:
+        distribution: temurin
+        java-version: '17'
+    - name: Enable KVM for the emulator
+      run: |
+        set -euo pipefail
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
+    - name: Install tools, the pinned NDK and the emulator image
+      run: |
+        set -euo pipefail
+        sudo apt-get update
+        sudo apt-get install --yes libxml2-utils
+        rustup toolchain install
+        rustup target add x86_64-linux-android
+        # sdkmanager 退出后 yes 再写会收到 SIGPIPE（退出码 141），在 pipefail 下让整步失败；它的退出码不算数，装没装上由后面的核对判断。
+        { yes || true; } | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --install \
+          'ndk;28.2.13676358' 'build-tools;35.0.0' 'platforms;android-35' 'platforms;android-36' \
+          emulator platform-tools 'system-images;android-${{ matrix.api }};default;x86_64' >/dev/null
+        grep -q '28.2.13676358' "$ANDROID_SDK_ROOT/ndk/28.2.13676358/source.properties"
+        test -f "$ANDROID_SDK_ROOT/system-images/android-${{ matrix.api }}/default/x86_64/package.xml"
+    - name: Boot the dedicated AVD
+      run: |
+        set -euo pipefail
+        mkdir -p target/android
+        nohup bash platforms/android/tests/device/start-emulator.sh ${{ matrix.api }} > target/android/emulator.log 2>&1 &
+        serial="emulator-$((5580 - 2 * (35 - ${{ matrix.api }})))"
+        echo "SERIAL=$serial" >> "$GITHUB_ENV"
+        adb="$ANDROID_SDK_ROOT/platform-tools/adb"
+        timeout 600 "$adb" -s "$serial" wait-for-device
+        timeout 600 bash -c "until [ \"\$('$adb' -s $serial shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')\" = 1 ]; do sleep 5; done"
+        "$adb" -s "$serial" shell getprop ro.build.version.sdk
+    - name: Run the client-core unit tests on the AVD
+      run: |
+        set -euo pipefail
+        tests=$(bash platforms/android/tests/device/build-core-test.sh x86_64 | tail -1)
+        MSIME_ANDROID_TEST_SERIAL="$SERIAL" bash platforms/android/tests/device/run-core-test.sh "$tests"
+    - name: Build the APK
+      run: |
+        set -euo pipefail
+        bash platforms/windows/bootstrap-vcpkg.sh
+        mkdir -p target/resources
+        resource_dir="$(cargo run --quiet -p msime-client-core --example install_resources --locked -- target/resources)"
+        bash platforms/android/build-apk.sh "$resource_dir"
+    - name: Install, prepare resources and accept input on the AVD
+      env:
+        MSIME_DEVICE_SMOKE_SKIP: FuzzyPinyinDeviceSmoke
+      run: bash platforms/android/tests/device/smoke.sh "$SERIAL" ${{ matrix.smoke }}
+    - name: Validate fork sentence, theme, dictionary and voice final commit
+      run: |
+        set -euo pipefail
+        adb="$ANDROID_SDK_ROOT/platform-tools/adb"
+        for suite in PinyinSentenceDeviceSmoke LocalExperienceDeviceSmoke VoiceCommitDeviceSmoke; do
+          result=$("$adb" -s "$SERIAL" shell am instrument -w "app.msime.android.test/app.msime.android.test.$suite")
+          printf '%s\n' "$result"
+          [[ "$result" == *MSIME_DEVICE_SMOKE_PASSED* ]]
+        done
+    - name: Collect device logs
+      if: failure()
+      run: |
+        adb="$ANDROID_SDK_ROOT/platform-tools/adb"
+        "$adb" -s "$SERIAL" logcat -d > target/android/logcat.txt 2>&1 || true
+        "$adb" -s "$SERIAL" logcat -d -b crash > target/android/crash.txt 2>&1 || true
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      if: failure()
+      with:
+        name: android-device-api${{ matrix.api }}-logs
+        path: |
+          target/android/emulator.log
+          target/android/logcat.txt
+          target/android/crash.txt
+        if-no-files-found: ignore
+    - name: Stop the AVD
+      if: always()
+      run: '"$ANDROID_SDK_ROOT/platform-tools/adb" -s "$SERIAL" emu kill || true'
+    needs:
+    - validate
+    permissions:
+      contents: read
