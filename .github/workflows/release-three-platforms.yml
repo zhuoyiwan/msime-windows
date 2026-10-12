@@ -496,12 +496,14 @@ jobs:
         python3 scripts/ci/fork-release-metadata.py assemble --directory release-assets
         [[ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" == true ]]
         [[ "$(gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" --jq .object.sha)" == "$GITHUB_SHA" ]]
-        gh api "repos/$GH_REPO/releases/tags/$RELEASE_TAG" > "$RUNNER_TEMP/existing-release.json"
+        release_id="$(gh release view "$RELEASE_TAG" --json databaseId --jq .databaseId)"
+        [[ "$release_id" =~ ^[0-9]+$ ]]
+        gh api "repos/$GH_REPO/releases/$release_id" > "$RUNNER_TEMP/existing-release.json"
         python3 scripts/ci/fork-release-metadata.py resume --directory release-assets --release-json "$RUNNER_TEMP/existing-release.json" > "$RUNNER_TEMP/missing-assets.txt"
         while IFS= read -r asset; do
           gh release upload "$RELEASE_TAG" "release-assets/$asset"
         done < "$RUNNER_TEMP/missing-assets.txt"
-        gh api "repos/$GH_REPO/releases/tags/$RELEASE_TAG" > "$RUNNER_TEMP/release.json"
+        gh api "repos/$GH_REPO/releases/$release_id" > "$RUNNER_TEMP/release.json"
         python3 - <<'PY'
         import hashlib,json,os,pathlib
         root=pathlib.Path('release-assets')
