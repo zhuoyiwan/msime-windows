@@ -8,4 +8,4 @@ Windows 使用本仓的 TSF DLL、Server 和 Inno Setup；Android 与 macOS 原�
 
 Mac 无 Apple Developer ID 签名、公证，DMG 内附本机安装脚本和说明；脚本在当前用户钥匙串生成代码签名证书，再签名并启动设置应用。CI 的签名检查不等于真实 Mac 输入源注册和中文输入验收。Mac 尚未移植本改版的局域网剪贴板、去账号模式及本轮前缀补全。
 
-Android r4 的完整设备验收来自 API 35；API 28 手机号曾实际补全成功，但跨编辑器/旋转套件未完整通过。QQ 游戏小窗候选需真机复测。Windows r6 未使用受系统信任的证书，安装包保留 `unsigned` 标识。
+Android r4 的完整设备验收来自 API 35；API 28 手机号曾实际补全成功，但跨编辑器/旋转套件未完整通过。QQ 游戏小窗候选需真机复测。Windows r7 未使用受系统信任的证书，安装包保留 `unsigned` 标识；补齐字母数字混合快捷短语的查询兼容，独立引擎全部 28 项测试通过。

@@ -29,9 +29,9 @@ using Statement = std::unique_ptr<sqlite3_stmt, StatementCloser>;
 
 bool valid_code(const std::string &code)
 {
-    return !code.empty() && code.size() <= 64 &&
-           (std::all_of(code.begin(), code.end(), [](unsigned char ch) { return ch >= 'a' && ch <= 'z'; }) ||
-            std::all_of(code.begin(), code.end(), [](unsigned char ch) { return ch >= '0' && ch <= '9'; }));
+    return !code.empty() && code.size() <= 64 && std::all_of(code.begin(), code.end(), [](unsigned char ch) {
+        return (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9');
+    });
 }
 
 QuickPhraseQueryResult query_failure(const char *diagnostic)
