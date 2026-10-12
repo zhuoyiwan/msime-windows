@@ -99,7 +99,16 @@ jobs:
           bash platforms/macos/package-release.sh --editions full
           ctest --test-dir target/macos-release --no-tests=error --output-on-failure -R '^(bundle-contents|backend-library-load|update-controller|shortcut)$'
 
+      - name: Preserve native DMG before installation checks
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: native-macos-universal
+          path: target/macos-package/dist/
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Verify local certificate installation path
+        timeout-minutes: 5
         run: |
           set -euo pipefail
           dmg=(target/macos-package/dist/*.dmg)
@@ -107,8 +116,14 @@ jobs:
           mount="$RUNNER_TEMP/msime-verify-mount"
           mkdir -p "$mount"
           hdiutil attach -quiet -nobrowse -readonly -mountpoint "$mount" "${dmg[0]}"
-          trap 'hdiutil detach -quiet "$mount" || true' EXIT
-          MSIME_LOCAL_VERIFY_ONLY=1 MSIME_LOCAL_APPLICATIONS_DIR="$RUNNER_TEMP/msime-local-applications" bash "$mount/安装 zhuoyiwan 版.command"
+          keychain="$RUNNER_TEMP/msime-ci.keychain-db"
+          password="$(openssl rand -hex 24)"
+          echo "::add-mask::$password"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 900 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          trap 'hdiutil detach -quiet "$mount" || true; security delete-keychain "$keychain" || true' EXIT
+          MSIME_LOCAL_VERIFY_ONLY=1 MSIME_LOCAL_CI_NONINTERACTIVE=1 MSIME_LOCAL_KEYCHAIN="$keychain" MSIME_LOCAL_KEYCHAIN_PASSWORD="$password" MSIME_LOCAL_APPLICATIONS_DIR="$RUNNER_TEMP/msime-local-applications" bash "$mount/安装 zhuoyiwan 版.command"
           test -f "$mount/zhuoyiwan 本机安装说明.md"
           local_app="$RUNNER_TEMP/msime-local-applications/MSIME-zhuoyiwan.app"
           input_method="$local_app/Contents/Resources/水杉输入法.app"
