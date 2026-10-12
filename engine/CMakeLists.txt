@@ -68,6 +68,7 @@ set(METASEQUOIA_IME_ENGINE_SOURCES
     quanpin/quanpin_utils.cpp
     quanpin/lattice_rerank.cpp
     quanpin/word_lattice.cpp
+    quanpin/robust_sentence.cpp
     schemes/japanese_romaji_scheme.cpp
     schemes/quanpin_scheme.cpp
     schemes/shuangpin_scheme.cpp

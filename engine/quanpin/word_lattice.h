@@ -81,6 +81,15 @@ struct LatticePath
     std::vector<std::string> words;
 };
 
+// 有界纠错解码使用原字母位置，边始终对应真实词条完整读音。
+struct LetterLexeme
+{
+    size_t start = 0;
+    size_t end = 0;
+    LatticeLexeme lexeme;
+    double penalty = 0;
+};
+
 // 字级搭配打分函数。context_tail 是路径已累计词文本的尾部（解码器截到
 // kCollocationTailCodepoints 个码点），word 是候选词，is_rear 标记该词是句子的
 // 最后一个词。见 WordLatticeOptions::collocation_scorer。
@@ -174,6 +183,8 @@ size_t generated_sentence_insert_position(const std::vector<WordItem> &candidate
 
 std::vector<LatticePath> decode_word_lattice(const Segments &syllables, const WordLatticeLookup &lookup,
                                              const WordLatticeOptions &options = {});
+std::vector<LatticePath> decode_letter_lattice(size_t length, const std::vector<LetterLexeme> &edges,
+                                               const WordLatticeOptions &options = {});
 
 // `rerank_source` is the source stamped on the reranker's pick, so the candidate list can say which
 // component chose that row. When options.include_lattice_best is true, the lattice's own pick stays

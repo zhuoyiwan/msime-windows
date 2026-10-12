@@ -9,6 +9,7 @@ add_test(NAME voice_control_dispatch COMMAND test_voice_control_dispatch)
 set(TEST_SOURCE_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_fork_update.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/test_robust_sentence.cpp"
     "${CMAKE_SOURCE_DIR}/src/settings/fork_update.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_date_time_query.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_v_mode_query.cpp"

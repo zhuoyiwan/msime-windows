@@ -298,15 +298,14 @@ size_t generated_sentence_insert_position(const std::vector<WordItem> &candidate
     return insert_at;
 }
 
-std::vector<LatticePath> decode_word_lattice(const Segments &syllables, const WordLatticeLookup &lookup,
+static std::vector<LatticePath> decode_graph(const std::vector<std::vector<LatticeEdge>> &graph,
                                              const WordLatticeOptions &options)
 {
-    if (syllables.empty() || !lookup)
+    if (graph.empty())
         return {};
 
-    const size_t n = syllables.size();
+    const size_t n = graph.size();
     const ngram::LanguageModel *model = active_model(options);
-    const auto graph = build_graph(syllables, lookup, options);
     std::vector<std::vector<Hyp>> columns(n + 1);
     Hyp start;
     start.score = 0.0;
@@ -390,13 +389,47 @@ std::vector<LatticePath> decode_word_lattice(const Segments &syllables, const Wo
     return paths;
 }
 
+std::vector<LatticePath> decode_word_lattice(const Segments &syllables, const WordLatticeLookup &lookup,
+                                             const WordLatticeOptions &options)
+{
+    if (syllables.empty() || !lookup)
+        return {};
+    return decode_graph(build_graph(syllables, lookup, options), options);
+}
+
+std::vector<LatticePath> decode_letter_lattice(size_t length, const std::vector<LetterLexeme> &edges,
+                                               const WordLatticeOptions &options)
+{
+    std::vector<std::vector<LatticeEdge>> graph(length);
+    const auto *model = active_model(options);
+    for (const auto &item : edges)
+    {
+        if (item.start >= item.end || item.end > length || item.lexeme.value.empty())
+            continue;
+        LatticeEdge edge;
+        edge.end = item.end;
+        edge.word = item.lexeme.value;
+        edge.key = item.lexeme.key;
+        edge.weight = item.lexeme.weight;
+        const double weight = static_cast<double>((std::max)(int64_t{1}, edge.weight));
+        edge.base_score = model ? options.dictionary_tiebreak * std::log10(weight) - item.penalty
+                                : std::log(weight) - std::log(options.unigram_z) +
+                                      4.0 * static_cast<double>(syllable_count_from_key(edge.key) - 1) - item.penalty;
+        if (model)
+            edge.index = model->index(edge.word);
+        graph[item.start].push_back(std::move(edge));
+    }
+    return decode_graph(graph, options);
+}
+
 void merge_lattice_candidates(std::vector<WordItem> &candidates, const Segments &syllables,
                               const WordLatticeLookup &lookup, const std::string &typed_pinyin,
                               const WordLatticeOptions &options, const std::vector<SourcedLatticeReranker> &rerankers)
 {
     if (!lookup || syllables.size() < 2)
         return;
-    if (!has_only_complete_pinyin_segments(syllables))
+    if (!has_only_complete_pinyin_segments(Segments(syllables.begin(), syllables.end() - 1)) ||
+        !prefix_pinyin_set().count(syllables.back()))
         return;
 
     auto paths =

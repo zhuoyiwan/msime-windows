@@ -4,6 +4,7 @@
 
 #include "../common/helpcode_utils.h"
 #include "quanpin_query.h"
+#include "robust_sentence.h"
 #include "quanpin_utils.h"
 #include "../shuangpin/shuangpin_utils.h"
 #include <algorithm>
@@ -229,7 +230,8 @@ SeriesQueryResolution resolve_series_query(const std::string &raw_input, const q
             // jianpin boundary. Stacking the two turns deletion-shaped input into
             // noise (e.g. "shng" -> "sun" + "g" -> 笋干). Structural typos
             // (transposition / deletion / insertion) are confident enough to compose.
-            const unsigned head_types = autocorrect_types & ~quanpin::kAutocorrectNeighbor;
+            const unsigned head_types =
+                raw_input.size() >= 9 ? autocorrect_types : autocorrect_types & ~quanpin::kAutocorrectNeighbor;
             const auto &prefixes = quanpin::prefix_pinyin_set();
             const auto &intact = quanpin::intact_pinyin_set();
             for (std::size_t tail_len = 1; head_types != 0 && tail_len <= 2 && tail_len < raw_input.size(); ++tail_len)
@@ -250,6 +252,34 @@ SeriesQueryResolution resolve_series_query(const std::string &raw_input, const q
                 result.corrected_input = true;
                 populate_from_cuts(head_cuts, tail);
                 break;
+            }
+        }
+        if (raw_input.size() >= 8 && result.corrected_input)
+        {
+            for (size_t tail_len = 1; tail_len <= 2; ++tail_len)
+            {
+                const auto tail = raw_input.substr(raw_input.size() - tail_len);
+                if (!quanpin::prefix_pinyin_set().count(tail) || quanpin::intact_pinyin_set().count(tail))
+                    continue;
+                std::vector<quanpin::Segments> tails;
+                for (const auto &cut : quanpin::autocorrect_cut_kbest(raw_input.substr(0, raw_input.size() - tail_len),
+                                                                      autocorrect_types, kAutocorrectCutKBest))
+                {
+                    auto parts = cut_syllables(cut);
+                    parts.push_back(tail);
+                    if (parts != result.corrected_segments &&
+                        std::find(tails.begin(), tails.end(), parts) == tails.end())
+                        tails.push_back(std::move(parts));
+                }
+                if (!tails.empty())
+                {
+                    tails.insert(tails.end(), result.alternative_corrected_cuts.begin(),
+                                 result.alternative_corrected_cuts.end());
+                    if (tails.size() > kAutocorrectCutKBest - 1)
+                        tails.resize(kAutocorrectCutKBest - 1);
+                    result.alternative_corrected_cuts = std::move(tails);
+                    break;
+                }
             }
         }
     }
@@ -452,6 +482,9 @@ std::vector<WordItem> QuanpinDictionary::query_exact(const std::string &raw_inpu
     // greedy correction paths from re-introducing them into the merge tier.
     for (const auto &costlier : resolution.costlier_corrected_cuts)
     {
+        if (raw_input.size() >= 8 && !costlier.empty() && quanpin::prefix_pinyin_set().count(costlier.back()) &&
+            !quanpin::intact_pinyin_set().count(costlier.back()))
+            continue;
         seen_segmentations.insert(quanpin::join_segments(costlier));
     }
     const auto append_alternative = [&](const quanpin::Segments &candidate) {
@@ -729,6 +762,33 @@ std::vector<WordItem> QuanpinDictionary::query_exact(const std::string &raw_inpu
         append_unique_words(literal_mixed, result);
         result = std::move(literal_mixed);
     }
+    // 普通整句无法解释的长输入才进入有界原字母词图，短输入与手工分隔符保持原规则。
+    const bool invalid_head =
+        segments.empty() || (raw_input.size() >= 8 && autocorrect_types && segments.size() >= 2 &&
+                             !std::all_of(segments.begin(), segments.end() - 1, [](const auto &part) {
+                                 return quanpin::intact_pinyin_set().count(part) != 0;
+                             }));
+    if (invalid_head && segmentation.empty() && autocorrect_types && sentence_association_.word_lattice)
+    {
+        quanpin::WordLatticeOptions options;
+        options.language_model = language_model_;
+        auto paths = quanpin::decode_robust_sentence(
+            raw_input, autocorrect_types, quanpin::make_lattice_db_lookup(db_, statement_cache_, 8), options);
+        if (std::any_of(result.begin(), result.end(), [](const auto &row) { return row.sentence_association; }) &&
+            paths.size() > 2)
+            paths.resize(2);
+        size_t at = result.empty() ? 0 : 1;
+        for (const auto &path : paths)
+        {
+            if (std::any_of(result.begin(), result.end(), [&](const auto &row) { return row.word == path.sentence; }))
+                continue;
+            WordItem row(raw_input, path.sentence, static_cast<int64_t>(path.log_prob * 1000),
+                         CandidateSource::Generated, path.key);
+            row.sentence_association = true;
+            row.corrected_from = raw_input;
+            result.insert(result.begin() + static_cast<std::ptrdiff_t>(at++), std::move(row));
+        }
+    }
     series_cache_.insert(resolution.cache_key, result);
     current_candidate_list_ = result;
     return current_candidate_list_;
@@ -837,7 +897,11 @@ std::vector<WordItem> QuanpinDictionary::query_series(const std::string &raw_inp
         result.insert(result.end(), partial_result.begin(), partial_result.end());
     }
 
-    if (segments.size() >= 2 && quanpin::has_only_complete_pinyin_segments(segments))
+    const bool tail_prefix =
+        segments.size() >= 2 &&
+        quanpin::has_only_complete_pinyin_segments(quanpin::Segments(segments.begin(), segments.end() - 1)) &&
+        quanpin::prefix_pinyin_set().count(segments.back());
+    if (tail_prefix)
     {
         // 两条整句来源各出一句：词格（kenlm 三元模型打分）在前，Google 解码器在后。
         // 词格换成 sc.lm 之后整体比 Google 那条准，所以由它占首位；Google 那条保留，
@@ -857,7 +921,7 @@ std::vector<WordItem> QuanpinDictionary::query_series(const std::string &raw_inp
         // 不管走哪条，送进去之前都要把 ü 换成它认的写法：它的音节表里只有 nue/lue，
         // nve 会被拆成 nv + e。见 quanpin::to_google_spelling。
         // Google 整句（Fallback）：仅在开关打开时才解码、才出候选。
-        if (sentence_association_.google)
+        if (sentence_association_.google && quanpin::has_only_complete_pinyin_segments(segments))
         {
             const std::string google_input =
                 raw_input.find('\'') != std::string::npos
@@ -921,9 +985,20 @@ std::vector<WordItem> QuanpinDictionary::query_series(const std::string &raw_inp
         }
         if (sentence_association_.word_lattice || !neural_rerankers.empty())
         {
-            quanpin::merge_lattice_candidates(
-                result, segments, quanpin::make_lattice_db_lookup(db_, statement_cache_, lattice_options.span_limit),
-                segmentation.empty() ? raw_input : segmentation, lattice_options, neural_rerankers);
+            auto exact = quanpin::make_lattice_db_lookup(db_, statement_cache_, lattice_options.span_limit);
+            auto lookup = [&, exact](const quanpin::Segments &span) {
+                if (quanpin::has_only_complete_pinyin_segments(span))
+                    return exact(span);
+                std::vector<quanpin::LatticeLexeme> rows;
+                const auto items = quanpin::query_segments_keyed_flat(span, db_, statement_cache_, 32);
+                for (const auto &item : items)
+                    if (quanpin::split_segments(item.key).size() == span.size() &&
+                        quanpin::is_complete_pinyin_input(item.key))
+                        rows.push_back({item.key, item.value, item.weight});
+                return rows;
+            };
+            quanpin::merge_lattice_candidates(result, segments, lookup, segmentation.empty() ? raw_input : segmentation,
+                                              lattice_options, neural_rerankers);
         }
     }
 
@@ -1105,7 +1180,7 @@ std::vector<WordItem> QuanpinDictionary::merge_alternative_segmentations(
 {
     const auto alternative_items = quanpin::query_exact_segmentations_keyed_flat(
         alternative_segmentations, db_, statement_cache_, kAlternativeSegmentationCandidateLimit);
-    if (alternative_items.empty())
+    if (alternative_items.empty() && raw_input.size() < 8)
     {
         return result;
     }
@@ -1134,9 +1209,10 @@ std::vector<WordItem> QuanpinDictionary::merge_alternative_segmentations(
     // like 西鄂 for "xie" instead of a reading the user might actually have meant.
     const std::int64_t primary_top_weight = primary_full.empty() ? 0 : primary_full.front().weight;
     const bool promote_alternative =
+        !alternative_items.empty() &&
         static_cast<std::int64_t>(alternative_items.front().weight) * kAlternativeSegmentationPromotionRatio >=
-        primary_top_weight;
-    const std::string &best_alternative_word = alternative_items.front().value;
+            primary_top_weight;
+    const std::string best_alternative_word = alternative_items.empty() ? "" : alternative_items.front().value;
     const auto best_alternative = std::find_if(merged_full.begin(), merged_full.end(), [&](const WordItem &item) {
         return item.word == best_alternative_word;
     });
@@ -1159,9 +1235,24 @@ std::vector<WordItem> QuanpinDictionary::merge_alternative_segmentations(
     }
 
     std::vector<WordItem> merged = std::move(merged_full);
-    const size_t primary_full_count = primary_full.size() < result.size() ? primary_full.size() : result.size();
-    std::vector<WordItem> remaining(result.begin() + static_cast<std::ptrdiff_t>(primary_full_count), result.end());
-    append_unique_words(merged, remaining);
+    append_unique_words(merged, result);
+    if (raw_input.size() >= 8 && sentence_association_.word_lattice)
+    {
+        auto cuts = alternative_segmentations;
+        std::stable_sort(cuts.begin(), cuts.end(), [](const auto &a, const auto &b) { return a.size() < b.size(); });
+        std::vector<WordItem> sentences;
+        for (size_t i = 0; i < (std::min)(cuts.size(), size_t{3}); ++i)
+        {
+            const auto rows = query_series(raw_input, quanpin::join_segments(cuts[i]), cuts[i]);
+            const auto found =
+                std::find_if(rows.begin(), rows.end(), [](const auto &row) { return row.sentence_association; });
+            if (found != rows.end() &&
+                std::none_of(merged.begin(), merged.end(), [&](const auto &row) { return row.word == found->word; }))
+                append_unique_words(sentences, {*found});
+        }
+        merged.insert(merged.begin() + static_cast<std::ptrdiff_t>(merged.empty() ? 0 : 1), sentences.begin(),
+                      sentences.end());
+    }
     return merged;
 }
 
