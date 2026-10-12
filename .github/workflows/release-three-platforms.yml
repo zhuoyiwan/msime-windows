@@ -229,4 +229,4 @@ jobs:
           set -euo pipefail
           [[ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" == true ]]
           gh release upload "$RELEASE_TAG" release-assets/*.dmg release-assets/*.zip release-assets/SHA256SUMS.txt release-assets/MACOS-INSTALL.md release-assets/release-provenance.json --clobber
-          echo "三端产物已暂存到草稿 Release：$RELEASE_TAG。发布前需核对运行结果与资产校验和。" >> "$GITHUB_STEP_SUMMARY"
+          echo "三端产物已暂存到草稿 Release：${RELEASE_TAG}。发布前需核对运行结果与资产校验和。" >> "$GITHUB_STEP_SUMMARY"
