@@ -11,9 +11,20 @@ on:
         description: 已暂存 Windows 与 Android 安装包的草稿 Release tag
         required: true
         type: string
+      reuse_run:
+        description: 可选，复用本仓已成功原生构建的 run ID（只重打包脚本）
+        required: false
+        default: ''
+        type: string
+      built_source_sha:
+        description: 复用时必填，原生二进制的完整源码 SHA
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: zhuoyiwan-three-platform-release
@@ -30,6 +41,8 @@ jobs:
       GH_REPO: ${{ github.repository }}
       SOURCE_SHA: ${{ inputs.source_sha }}
       RELEASE_TAG: ${{ inputs.release_tag }}
+      REUSE_RUN: ${{ inputs.reuse_run }}
+      BUILT_SOURCE_SHA: ${{ inputs.built_source_sha }}
     steps:
       - name: Check out fixed native macOS source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -60,7 +73,46 @@ jobs:
           assert len(list(root.glob('*.apk'))) == 1
           PY
 
+      - name: Restore fixed native package for script-only recovery
+        if: inputs.reuse_run != ''
+        run: |
+          set -euo pipefail
+          [[ "$REUSE_RUN" =~ ^[0-9]+$ ]]
+          [[ "$BUILT_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git fetch origin "$BUILT_SOURCE_SHA"
+          python3 - <<'PY'
+          import os, subprocess
+          allowed = {
+              'platforms/macos/scripts/install-local-fork.command',
+              'platforms/macos/LOCAL-FORK-INSTALL.md',
+              '.agents/notes/implemented/process/2026-10-12-fork-three-platform-release.md',
+          }
+          changed = set(subprocess.check_output([
+              'git', 'diff', '--name-only', os.environ['BUILT_SOURCE_SHA'], os.environ['SOURCE_SHA']
+          ], text=True).splitlines())
+          assert changed <= allowed, changed - allowed
+          PY
+          gh api "repos/$GH_REPO/actions/runs/$REUSE_RUN/jobs" --jq '.jobs[].steps[] | select(.name == "Build native universal DMG") | .conclusion' | grep -x success
+          mkdir -p target/macos-package/dist
+          gh run download "$REUSE_RUN" --name native-macos-universal --dir target/macos-package/dist
+          (cd target/macos-package/dist && shasum -a 256 -c SHA256SUMS)
+          version="$(tr -d '[:space:]' < platforms/macos/version.txt)"
+          original="$PWD/target/macos-package/dist/msime-macos-${version}-universal.dmg"
+          hdiutil convert "$original" -format UDRW -o "$RUNNER_TEMP/msime-repack.dmg"
+          mount="$RUNNER_TEMP/msime-repack-mount"
+          mkdir -p "$mount"
+          hdiutil attach -quiet -nobrowse -mountpoint "$mount" "$RUNNER_TEMP/msime-repack.dmg"
+          trap 'hdiutil detach -quiet "$mount" || true' EXIT
+          cp platforms/macos/scripts/install-local-fork.command "$mount/安装 zhuoyiwan 版.command"
+          chmod +x "$mount/安装 zhuoyiwan 版.command"
+          cp platforms/macos/LOCAL-FORK-INSTALL.md "$mount/zhuoyiwan 本机安装说明.md"
+          hdiutil detach -quiet "$mount"
+          trap - EXIT
+          hdiutil convert "$RUNNER_TEMP/msime-repack.dmg" -format UDZO -imagekey zlib-level=9 -ov -o "$original"
+          (cd target/macos-package/dist && shasum -a 256 -- *.dmg *.zip > SHA256SUMS)
+
       - name: Install dependencies
+        if: inputs.reuse_run == ''
         run: |
           brew install nlohmann-json
           corepack enable
@@ -68,12 +120,14 @@ jobs:
           xcodebuild -version
 
       - name: Cache pinned Sparkle archive
+        if: inputs.reuse_run == ''
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/sparkle-archive
           key: sparkle-2.9.6-${{ runner.os }}-${{ hashFiles('platforms/macos/CMakeLists.txt') }}
 
       - name: Prepare pinned Sparkle
+        if: inputs.reuse_run == ''
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/sparkle-archive"
@@ -88,11 +142,13 @@ jobs:
           echo "MSIME_SPARKLE_ROOT=$RUNNER_TEMP/sparkle" >> "$GITHUB_ENV"
 
       - name: Fetch locked gloss tables
+        if: inputs.reuse_run == ''
         run: |
           python3 scripts/fetch_offline_glosses.py
           python3 scripts/fetch_gloss_tables.py
 
       - name: Build native universal DMG
+        if: inputs.reuse_run == ''
         run: |
           set -euo pipefail
           bash -n platforms/macos/scripts/install-local-fork.command
@@ -149,6 +205,9 @@ jobs:
           manifest = json.loads(path.read_text())
           manifest['workflow_commit'] = os.environ['GITHUB_SHA']
           manifest['workflow_run'] = os.environ['GITHUB_SERVER_URL'] + '/' + os.environ['GITHUB_REPOSITORY'] + '/actions/runs/' + os.environ['GITHUB_RUN_ID']
+          if os.environ['REUSE_RUN']:
+              manifest['macos_binary_source_commit'] = os.environ['BUILT_SOURCE_SHA']
+              manifest['macos_native_build_run'] = os.environ['GITHUB_SERVER_URL'] + '/' + os.environ['GITHUB_REPOSITORY'] + '/actions/runs/' + os.environ['REUSE_RUN']
           path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n')
           PY
           cp platforms/macos/LOCAL-FORK-INSTALL.md release-assets/MACOS-INSTALL.md
