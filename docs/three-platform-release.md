@@ -1,5 +1,7 @@
 # zhuoyiwan 三端改版发布
 
+当前发布流程见[三端云端构建](fork-cloud-release.md)。以下保留 2026-10-12 的旧包汇集与 Mac 签名恢复记录；预上传双端包和 `reuse_run` 不再是当前工作流的入口。
+
 Windows 使用本仓的 TSF DLL、Server 和 Inno Setup；Android 与 macOS 原生宿主的源码位于 [zhuoyiwan/msime](https://github.com/zhuoyiwan/msime)，按完整 commit SHA 固定。Windows 工程不能通过修改 CMake 配置生成 macOS 输入法。
 
 三端安装包统一放在本仓同一个 Release。`release-three-platforms.yml` 手动运行，参数是 Mac/Android fork 源码完整 SHA 和草稿 Release tag（格式 `zhuoyiwan-YYYYMMDD-rN`）。先把已交付的 Windows EXE、同证书 ARM64 Android APK 和 `release-provenance.json` 上传到草稿；工作流核对摘要后用 GitHub 托管的 macOS runner 编译 universal DMG、验证核心资源及本机签名路径，再补齐三端 `SHA256SUMS.txt`。成功后核对资产并将草稿公开。不会触发 `main` 的自动发版、写入上游 Release 或上游 Homebrew tap。
