@@ -1,0 +1,21 @@
+[
+  {
+    "tag_name": "zhuoyiwan-20261013-r6",
+    "draft": false,
+    "prerelease": true,
+    "assets": [
+      {
+        "name": "MetasequoiaIME_Android_v0.3.1-zhuoyiwan-arm64-r6-signed.apk",
+        "size": 187471200,
+        "digest": "sha256:cf2873237aeee04449d3baffface681235604f172b72400be3c0d9ff56d4b109",
+        "browser_download_url": "https://github.com/zhuoyiwan/msime-windows/releases/download/zhuoyiwan-20261013-r6/MetasequoiaIME_Android_v0.3.1-zhuoyiwan-arm64-r6-signed.apk"
+      },
+      {
+        "name": "MetasequoiaIME_Setup_v0.7.1-zhuoyiwan-local-20261013-r9-unsigned.exe",
+        "size": 90578930,
+        "digest": "sha256:473a701527fdf506bd844495a244db8c24f30482b3db0b4e072a19650c5b0138",
+        "browser_download_url": "https://github.com/zhuoyiwan/msime-windows/releases/download/zhuoyiwan-20261013-r6/MetasequoiaIME_Setup_v0.7.1-zhuoyiwan-local-20261013-r9-unsigned.exe"
+      }
+    ]
+  }
+]
