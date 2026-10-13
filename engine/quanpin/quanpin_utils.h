@@ -194,6 +194,8 @@ std::vector<AutocorrectCut> autocorrect_cut_kbest(const std::string &pinyin, uns
 //   读法，至多 kMaxLegalInputCorrections 处纠正，且纠正的那段必须盖住字面切分里
 //   某个非首位零声母音节（zi'a 的 a、jiu'zhe'e'yang 的 e）——挤出或多出的元音是
 //   合法输入上手误的标志，没有它 k-best 会跨边界重切任何普通输入；
+// - 邻键仅允许把相邻的音节合回一个完整音节：第二段为零声母、合起来至少四字母，
+//   且静态邻键表有等长读法（zi'ang -> xiang）；不替换普通完整音节、不做生成式枚举；
 // - 罕见合法音节换位成常用音节（lia -> lai、dia -> dai），k-best 只给非法片段找
 //   纠正、走不到这一种。只在多音节输入里认，单打 lia 多半就是要「俩」；跟随换位开关。
 // 取舍交给查询层按整句打分（语言模型分 + 每处纠正的手误代价）。返回至多 k 条，每条

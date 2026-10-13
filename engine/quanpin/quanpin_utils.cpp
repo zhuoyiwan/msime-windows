@@ -1059,10 +1059,9 @@ constexpr std::pair<std::string_view, std::string_view> kRareLegalTranspositions
 
 // 合法输入上一条读法最多带几处纠正。再多就几乎都是巧合拼出来的读法。
 constexpr size_t kMaxLegalInputCorrections = 2;
-// 合法输入上认的纠错类型：换位、多字、漏字。邻键替换不认——合法输入里几乎每个字母
-// 都有邻键能换成另一个合法读法，那是噪声面最大的一类。
+// 普通合法音节仍不做邻键替换；邻键只允许合并被误拆出的零声母尾音节。
 constexpr unsigned kLegalInputCorrectionTypes =
-    kAutocorrectTransposition | kAutocorrectDeletion | kAutocorrectInsertion;
+    kAutocorrectTransposition | kAutocorrectDeletion | kAutocorrectInsertion | kAutocorrectNeighbor;
 
 bool is_zero_initial_syllable(const std::string &syllable)
 {
@@ -1121,8 +1120,9 @@ std::vector<AutocorrectCut> legal_input_correction_cuts(const std::string &pinyi
     // 先多搜几条再过滤：长句里前几名常被别处更便宜、却不盖零声母音节的纠正占满
     // （jintianjiuzheeyangba 取 3 条时一条都留不下）。与查询层同一个 k。
     constexpr std::size_t kSearchKBest = 9;
-    for (auto &cut : zero_initial_spans.empty() ? std::vector<AutocorrectCut>{}
-                                                : autocorrect_cut_kbest(pinyin, types, std::max(k, kSearchKBest)))
+    for (auto &cut : zero_initial_spans.empty()
+                         ? std::vector<AutocorrectCut>{}
+                         : autocorrect_cut_kbest(pinyin, types & ~kAutocorrectNeighbor, std::max(k, kSearchKBest)))
     {
         const bool covers_zero_initial =
             std::any_of(cut.segments.begin(), cut.segments.end(), [&](const AutocorrectCutSegment &segment) {
@@ -1138,6 +1138,48 @@ std::vector<AutocorrectCut> legal_input_correction_cuts(const std::string &pinyi
             cut.edge_count <= kMaxLegalInputCorrections)
         {
             add_cut(std::move(cut));
+        }
+    }
+
+    // zi'ang 这样的字面切分掩盖了 ziang -> xiang 的邻键手误。只合并相邻的两个音节，
+    // 且第二段必须是零声母；至少四字母，静态表、等长替换，不放开普通合法音节。
+    if ((types & kAutocorrectNeighbor) != 0)
+    {
+        size_t start = 0;
+        for (size_t i = 0; i + 1 < segments.size(); ++i)
+        {
+            const auto piece = segments[i] + segments[i + 1];
+            const auto targets = correction_index().find(piece);
+            if (piece.size() >= 4 && is_zero_initial_syllable(segments[i + 1]) && targets != correction_index().end())
+            {
+                for (const auto &target : targets->second)
+                {
+                    if (target.generated || !(target.type_bit & kAutocorrectNeighbor) ||
+                        target.syllable.size() != piece.size())
+                        continue;
+                    AutocorrectCut cut;
+                    size_t offset = 0;
+                    for (size_t j = 0; j < segments.size(); ++j)
+                    {
+                        if (j == i)
+                        {
+                            cut.segments.push_back(
+                                {std::string(target.syllable), piece, start, true, kAutocorrectNeighborWeight});
+                            offset += piece.size();
+                            ++j;
+                        }
+                        else
+                        {
+                            cut.segments.push_back({segments[j], segments[j], offset, false});
+                            offset += segments[j].size();
+                        }
+                    }
+                    cut.edge_count = 1;
+                    cut.weight = kAutocorrectNeighborWeight;
+                    add_cut(std::move(cut));
+                }
+            }
+            start += segments[i].size();
         }
     }
 
