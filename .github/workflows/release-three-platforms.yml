@@ -13,7 +13,7 @@ name: zhuoyiwan cloud three-platform release
       windows_revision:
         description: Windows 改版修订号
         required: true
-        default: '9'
+        default: '10'
         type: string
 permissions:
   contents: write
@@ -48,6 +48,40 @@ jobs:
         python3 -m unittest discover -s tests -p test_product_lock.py
     - name: Verify release provenance and safe resume
       run: python3 -m unittest discover -s tests -p test_fork_release_metadata.py
+  dictionary:
+    name: Build complete fork dictionaries
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.sha }}
+        persist-credentials: false
+    - name: Resolve the reviewed dictionary source
+      run: |
+        echo "DICTIONARY_SHA=$(python3 -c 'import json;print(json.load(open("fork-dictionary-lock.json"))["source_commit"])')" >> "$GITHUB_ENV"
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: metasequoiaime/msime-dictionary
+        ref: ${{ env.DICTIONARY_SHA }}
+        path: fork-dictionary-source
+        persist-credentials: false
+    - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+      with:
+        path: MetasequoiaImeDict/cache/inputs
+        key: fork-dictionary-inputs-${{ hashFiles('scripts/dictionary_build/inputs.lock.json') }}
+    - name: Build and verify dictionary coverage and parts of speech
+      run: |
+        python3 -m pip install "pypinyin==$(python3 -c 'import json;print(json.load(open("fork-dictionary-lock.json"))["pypinyin_version"])')"
+        python3 scripts/build-dictionary.py --dictionary fork-dictionary-source
+        python3 scripts/ci/check-fork-dictionaries.py
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: fork-dictionaries
+        path: MetasequoiaImeDict/out/
+        if-no-files-found: error
+        retention-days: 7
   tsf:
     name: Windows ${{ matrix.name }}
     runs-on: windows-2025
@@ -121,6 +155,7 @@ jobs:
     name: Server
     needs:
     - validate
+    - dictionary
     runs-on: windows-2025
     timeout-minutes: 120
     env:
@@ -185,11 +220,15 @@ jobs:
     - name: Check the Release binaries and symbols
       shell: pwsh
       run: ./scripts/ci/check-server-binaries.ps1 -BuildDir server/build-release/bin/Release
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        name: fork-dictionaries
+        path: MetasequoiaImeDict/out
     - name: Test with the product's exact data
       shell: pwsh
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: ./scripts/ci/test-server.ps1 -ServerRoot server -StagingRoot "$env:RUNNER_TEMP/product-data" -BuildDir build-release
+      run: ./scripts/ci/test-server.ps1 -ServerRoot server -StagingRoot "$env:RUNNER_TEMP/product-data" -BuildDir build-release -ForkDictionaryDirectory MetasequoiaImeDict/out
     - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
       with:
         name: fork-server
@@ -242,6 +281,7 @@ jobs:
     - tsf
     - server
     - ui
+    - dictionary
     runs-on: windows-2025
     timeout-minutes: 60
     env:
@@ -269,6 +309,10 @@ jobs:
       with:
         name: fork-webview2
         path: ui-html/webview2
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        name: fork-dictionaries
+        path: MetasequoiaImeDict/out
     - name: Package unsigned fork installer with verified resources
       shell: pwsh
       run: ./scripts/ci/package-fork.ps1 -ReleaseTag $env:RELEASE_TAG -Revision ([int]$env:REVISION)
@@ -514,6 +558,7 @@ jobs:
             assert assets[path.name]['digest']==expected, path.name
         PY
         gh release edit "$RELEASE_TAG" --draft=false --prerelease --latest=false
+        python3 scripts/ci/publish-fork-update-feed.py --release-id "$release_id"
         echo "Published https://github.com/$GH_REPO/releases/tag/$RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"
     - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
       with:

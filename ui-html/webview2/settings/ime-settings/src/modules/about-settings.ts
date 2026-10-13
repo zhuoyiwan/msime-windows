@@ -3,7 +3,7 @@ import { updateConfig } from './config-sync';
 import { setupToggleButton } from './shared';
 import type { ValidatedUpdate } from './update-manifest';
 import { describeInstallerTrust, parseVersion } from './update-manifest';
-import { FORK_API, FORK_RELEASES, pickForkUpdate, type ForkUpdate } from './fork-update';
+import { FORK_RELEASES, loadForkReleases, pickForkUpdate, type ForkUpdate } from './fork-update';
 import { onHostMessage } from '../utils/host-messages';
 
 const WEBSITE_URL = 'https://msime.app/';
@@ -163,15 +163,9 @@ export function setupAboutSettings(): void {
     const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
     try {
-      const response = await fetch(FORK_API, {
-        cache: 'no-store',
-        signal: controller.signal
-      });
-      if (!response.ok) {
-        throw new Error(`Update manifest returned ${response.status}`);
-      }
-
-      selected = pickForkUpdate(await response.json(), versionLabel.textContent ?? '');
+      selected = pickForkUpdate(await loadForkReleases(controller.signal), versionLabel.textContent ?? '');
+      // 失败不消耗当天检查机会；旧版本记录过失败的时间戳不再参与判断。
+      try { localStorage.setItem('zhuoyiwan.last-successful-update-check', String(Date.now())); } catch { /* 不影响更新。 */ }
       if (selected) {
         dialogVersion.textContent = `v${selected.version}`;
         renderInstallerTrust(dialogTrust, { version: parseVersion(selected.version)!, releaseUrl: selected.releaseUrl,
@@ -193,9 +187,7 @@ export function setupAboutSettings(): void {
   checkButton.addEventListener('click', () => void check());
   if (auto?.checked) {
     let due = true;
-    try { due = Date.now() - Number(localStorage.getItem('zhuoyiwan.last-update-check') ?? 0) > 86400000; } catch { /* 本次启动检查一次。 */ }
-    if (due) void check(true).then(() => {
-      try { localStorage.setItem('zhuoyiwan.last-update-check', String(Date.now())); } catch { /* 不影响手动更新。 */ }
-    });
+    try { due = Date.now() - Number(localStorage.getItem('zhuoyiwan.last-successful-update-check') ?? 0) > 86400000; } catch { /* 本次启动检查一次。 */ }
+    if (due) void check(true);
   }
 }

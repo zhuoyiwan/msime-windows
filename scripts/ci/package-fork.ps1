@@ -8,17 +8,19 @@ if ($ReleaseTag -notmatch '^zhuoyiwan-([0-9]{8})-r[0-9]+$' -or $Revision -lt 1) 
 $date = $Matches[1]
 $version = (Get-Content version.txt -Raw).Trim()
 $display = "$version-zhuoyiwan-local-$date-r$Revision"
-python scripts/product_lock.py fetch-dictionaries --staging-root .
-if ($LASTEXITCODE) { throw '词库下载或校验失败' }
+python scripts/ci/check-fork-dictionaries.py
+if ($LASTEXITCODE) { throw '改版词库来源或释义覆盖校验失败' }
+New-Item -ItemType Directory -Force 'MetasequoiaImeDict/source/mozc_dictionary_oss' | Out-Null
+Copy-Item 'MetasequoiaImeDict/out/mozc_dictionary_oss_README.txt' 'MetasequoiaImeDict/source/mozc_dictionary_oss/README.txt'
 ./scripts/build-language-model.ps1
 ./scripts/fetch-neural-model.ps1
 ./scripts/ci/install-inno-language.ps1
 ./installer/Prepare-PackageFiles.ps1 -TargetVersion $version -DisplayVersion $display -RepoRoot $env:GITHUB_WORKSPACE
-python scripts/product_lock.py manifest --windows-commit $env:GITHUB_SHA --output installer/app_data/product-manifest.json
+python scripts/ci/check-fork-dictionaries.py --windows-commit $env:GITHUB_SHA --product-manifest installer/app_data/product-manifest.json
 if ($LASTEXITCODE) { throw '产品来源清单失败' }
 ./installer/Compile-Installer.ps1 -Unsigned
 $asset = "MetasequoiaIME_Setup_v$display-unsigned.exe"
 New-Item -ItemType Directory -Force dist | Out-Null
 Copy-Item -LiteralPath "installer/Output/MetasequoiaIME_Setup_v$version.exe" -Destination "dist/$asset"
-python scripts/ci/fork-release-metadata.py record --platform windows --directory dist --source $env:GITHUB_SHA --asset $asset --version $display
+python scripts/ci/fork-release-metadata.py record --platform windows --directory dist --source $env:GITHUB_SHA --asset $asset --version $display --dictionary-marker MetasequoiaImeDict/out/local-dictionary.json
 if ($LASTEXITCODE) { throw 'Windows 产物来源记录失败' }

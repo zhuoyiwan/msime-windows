@@ -1,5 +1,7 @@
 # zhuoyiwan 改版应用内更新
 
+检查优先读取 `https://raw.githubusercontent.com/zhuoyiwan/msime-windows/zhuoyiwan-updates/releases.json`；静态源不可用时回退 GitHub Releases API。匿名 API 每小时限额只有 60 次，本轮实际得到 403/remaining=0，因此客户端不依赖 Token。静态清单由发布 job 在核对公开资产摘要后维护，保留精确下载 URL 和 SHA-256；Windows 只在成功检查后记录每日检查时间，失败可以立即重试。
+
 Windows 和 Android 从 `zhuoyiwan/msime-windows` 的 GitHub Releases 读取更新，不访问上游更新源。只接受改版命名的对应平台安装包及 GitHub 资产 SHA-256；草稿、外部链接、缺少摘要、错误架构与非改版资产被忽略。Windows 比较基础版本、日期、数字修订号；Android 比较基础版本、数字修订号，r10 排在 r9 之后。
 
 Windows 的关于页面提供检查、下载并启动安装向导、GitHub 发布页。自动检查默认关闭，开启后打开设置时每天检查一次。下载在工作线程运行，HTTPS 每次重定向检查精确 GitHub 资产主机、校验证书、限制大小并流式检查 SHA-256；失败允许重试。用户选择下载并安装后才启动安装程序。

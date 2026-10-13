@@ -1,7 +1,8 @@
 param(
     [Parameter(Mandatory = $true)][string]$ServerRoot,
     [Parameter(Mandatory = $true)][string]$StagingRoot,
-    [string]$BuildDir = 'build'
+    [string]$BuildDir = 'build',
+    [string]$ForkDictionaryDirectory = ''
 )
 $ErrorActionPreference = 'Stop'
 $automationRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
@@ -13,9 +14,16 @@ $helpcodes = Join-Path $automationRoot 'engine/helpcode/helpcodes'
 if (-not (Test-Path -LiteralPath $helpcodes -PathType Container)) {
     throw "Helpcodes not found at $helpcodes; the engine is vendored in-tree, so this is an incomplete checkout"
 }
-python (Join-Path $automationRoot 'scripts/product_lock.py') fetch-dictionaries --staging-root $StagingRoot
-if ($LASTEXITCODE -ne 0) { throw 'Could not provision locked dictionaries' }
-$verified = (Resolve-Path (Join-Path $StagingRoot 'MetasequoiaImeDict/out')).Path
+if ($ForkDictionaryDirectory) {
+    python (Join-Path $automationRoot 'scripts/ci/check-fork-dictionaries.py') --directory $ForkDictionaryDirectory
+    if ($LASTEXITCODE -ne 0) { throw '改版词库来源或释义覆盖校验失败' }
+    $verified = (Resolve-Path $ForkDictionaryDirectory).Path
+    New-Item -ItemType Directory -Force $StagingRoot | Out-Null
+} else {
+    python (Join-Path $automationRoot 'scripts/product_lock.py') fetch-dictionaries --staging-root $StagingRoot
+    if ($LASTEXITCODE -ne 0) { throw 'Could not provision locked dictionaries' }
+    $verified = (Resolve-Path (Join-Path $StagingRoot 'MetasequoiaImeDict/out')).Path
+}
 # Some Windows-only helpers still resolve LOCALAPPDATA; isolate those and the
 # cross-platform engine under the same root so no installed dictionary is used.
 $env:LOCALAPPDATA = Join-Path (Resolve-Path $StagingRoot).Path 'user-local'

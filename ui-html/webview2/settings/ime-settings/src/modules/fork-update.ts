@@ -1,5 +1,24 @@
 export const FORK_RELEASES = 'https://github.com/zhuoyiwan/msime-windows/releases';
 export const FORK_API = 'https://api.github.com/repos/zhuoyiwan/msime-windows/releases?per_page=30';
+export const FORK_FEED = 'https://raw.githubusercontent.com/zhuoyiwan/msime-windows/zhuoyiwan-updates/releases.json';
+
+// 发布完成后生成的小清单不占匿名 API 额度；故障时仍可从官方 API 查询。
+export async function loadForkReleases(signal: AbortSignal): Promise<unknown[]> {
+  let failure: unknown;
+  for (const url of [FORK_FEED, FORK_API]) {
+    try {
+      const response = await fetch(url, { cache: 'no-store', signal });
+      if (!response.ok) throw new Error(`更新源返回 HTTP ${response.status}`);
+      const payload: unknown = await response.json();
+      if (!Array.isArray(payload)) throw new Error('更新清单格式不对');
+      return payload;
+    } catch (error) {
+      failure = error;
+      if (signal.aborted) break;
+    }
+  }
+  throw failure;
+}
 const NAME = /^MetasequoiaIME_Setup_v(\d+\.\d+\.\d+)-zhuoyiwan-local-(\d{8})-r(\d+)(-unsigned)?\.exe$/;
 const VERSION = /^v?(\d+\.\d+\.\d+)(?:-zhuoyiwan-local-(\d{8})-r(\d+)(?:-unsigned)?)?$/;
 

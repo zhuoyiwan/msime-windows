@@ -1,5 +1,9 @@
 # zhuoyiwan 三端云端构建
 
+改版 Windows 使用 `fork-dictionary-lock.json` 固定的 `metasequoiaime/msime-dictionary` 文本源与 pypinyin 版本，由同次 run 的 dictionary job 重建。Server 测试和安装包下载同一份词库 artifact，打包阶段不再用标准 `product-lock.json` 的旧 `dict-v1.0.0` 覆盖。标准发布锁保持原约定；改版产品清单与 provenance 记录实际源提交、构建器和每个词库文件摘要。校验同时要求中译英至少 900000 条、英译中至少 65000 条及常用词词性，摘要清单必须完整。
+
+Windows 全拼纠错补上合法切分隐藏邻键手误的路径：仅合并相邻两音节且第二音节零声母、长度至少四字母，使用既有静态邻键表的等长替换。原读法保留，候选由现有词典和整句排序决定；关闭邻键纠错或显式音节分隔不启用这条路径，不按输入串或中文句子特化。
+
 `.github/workflows/release-three-platforms.yml` 手动触发真实三端构建，替代旧版“预上传 Windows/Android，只构建 Mac”的汇集流程。只允许用户 fork，不合入 main，也不调用标准 Release 工作流。
 
 输入固定的 `zhuoyiwan/msime` 完整源码 SHA、指向本次 Windows 工作流提交的草稿 tag 和 Windows 修订号。Windows 构建 x64/x86 TSF、完整 Server 测试和页面测试，再打未签名 Inno 包；Android 构建 full ARM64，使用原正式证书签名并核对指纹；Mac 完整重建 universal 原生 DMG，检查本机自签名安装路径。

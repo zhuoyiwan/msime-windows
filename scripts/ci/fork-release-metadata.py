@@ -24,6 +24,7 @@ def main():
     parser.add_argument("--version")
     parser.add_argument("--version-code", type=int)
     parser.add_argument("--certificate")
+    parser.add_argument("--dictionary-marker", type=Path)
     args = parser.parse_args()
     root = args.directory
     if args.mode == "resume":
@@ -50,6 +51,8 @@ def main():
             item.update(abi="arm64-v8a", versionCode=args.version_code, certificate_sha256=args.certificate)
         if args.platform == "windows":
             item.update(architectures=["x64", "x86"], signing="unsigned", uiAccess=False)
+            if args.dictionary_marker:
+                item["dictionary"] = json.loads(args.dictionary_marker.read_text(encoding="utf-8"))
         if args.platform == "macos":
             item.update(architectures=["arm64", "x86_64"], signing="local-self-signing", notarized=False)
         (root / f"{args.platform}-provenance.json").write_text(json.dumps(item, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

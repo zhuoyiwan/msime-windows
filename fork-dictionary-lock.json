@@ -1,0 +1,7 @@
+{
+  "repository": "metasequoiaime/msime-dictionary",
+  "source_commit": "4909582a8ce345c23809750e675e3d9e5f9516df",
+  "pypinyin_version": "0.50.0",
+  "minimum_zh_en_glosses": 900000,
+  "minimum_en_zh_glosses": 65000
+}
