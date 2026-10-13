@@ -16,6 +16,20 @@ Windows 全拼纠错补上合法切分隐藏邻键手误的路径：仅合并相
 
 Windows 未签名，uiAccess 关闭；Mac 没有 Developer ID/notarization，使用包内本机安装脚本。普通用户 Mac 登录会话输入源、真实手机 ASR、朋友热点连接仍需实机验收。
 
+## 2026-10-13 r7 修复发布记录
+
+[三端修复版 r7](https://github.com/zhuoyiwan/msime-windows/releases/tag/zhuoyiwan-20261013-r7)由 [Actions 38333815219](https://github.com/zhuoyiwan/msime-windows/actions/runs/38333815219) 完整构建，12 个 job 全部成功。Windows/工作流来源 `59ccbbf8d2e3b5077e25edc1206b58a597a20cc5`；Android/Mac 来源 `58dcf67e506953a89f1d3ae3364ae8e165d0d959`。
+
+Windows r10 安装包实际解包核验四个主词库摘要及产品清单：英文库 39,948,288 字节，中译英 912,766 条、英译中 66,817 条，常用词包含词性。包内数据和 sc.lm 的真实 Session 验证 `woziangquchi`、同类邻键变体、换主语/后半句的正确首选、原读法保留和选择后清空输入。Android r7 的实际 APK 经 apksigner/aapt 验证 ARM64、versionCode 3007 和原证书。
+
+公开资产与同次 run 的来源记录匹配；下载的 Windows/Android 文件摘要也一致。匿名读取静态清单已得到 r7，双端实际筛选代码识别正确的新版本、下载地址和摘要。旧客户端需先手动安装此次修复包。Mac 云端 universal 打包、本机签名安装门禁通过，本轮未本地下载 DMG 或验收普通 Mac 登录会话输入。
+
+- Windows：`9dcb578af472bf0773958ffbb4b3d05be22e3e29721f7cb17b713b041ac59d97`。
+- Android：`7a6b5e5dd061f556ce71e149f53d2ee5998252a8ad491e9b2159cacec5140346`。
+- Mac：`d6c1b54f39f1ac95f3675c65d7dd78cf9737113d644891c0048c3cbfb618f6b4`。
+
+本机 quick 仍因既有 Windows 工具链/契约检查限制未全绿。本轮修复其 mktemp 失败时清理误删工作树点文件的问题并新增隔离回归；不添加 known-failures 豁免，不把 quick 写成通过。
+
 ## 2026-10-13 r6 发布记录
 
 [三端预发布](https://github.com/zhuoyiwan/msime-windows/releases/tag/zhuoyiwan-20261013-r6)由 [Actions 38300269632](https://github.com/zhuoyiwan/msime-windows/actions/runs/38300269632) 完整构建并公开，11 个 job 全部成功。Windows 与工作流固定在 `8f1f56150121f34baee80a5f21ecdb75cfc30fc2`，Android/Mac 固定在 `6c665fe7f613244e8ed5d40c743483803a279c55`；没有复用旧二进制。
